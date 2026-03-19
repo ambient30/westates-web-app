@@ -566,6 +566,33 @@ function EditJobModal({ job, onClose, onSave }) {
                 />
               </div>
             </div>
+			
+			{/* Dispatch Flaggers */}
+			<div className="form-group">
+			  <label>Dispatched Flaggers</label>
+			  <p style={{ fontSize: '12px', color: '#5f6368', marginBottom: '8px' }}>
+				Mark employees as dispatched when they're confirmed/sent to the job. Dispatched flaggers show in black, unconfirmed in red.
+			  </p>
+			  <textarea
+				name="dispatchedFlaggers"
+				value={formData.dispatchedFlaggers}
+				onChange={handleChange}
+				rows="2"
+				style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #dadce0' }}
+				placeholder="Comma-separated (e.g., Dylan Miller, Brian Smith)"
+			  />
+			  {formData.assignedFlaggers && (
+				<div style={{ marginTop: '8px' }}>
+				  <button
+					type="button"
+					onClick={() => setFormData(prev => ({ ...prev, dispatchedFlaggers: prev.assignedFlaggers }))}
+					className="btn btn-secondary btn-small"
+				  >
+					Mark All Assigned as Dispatched
+				  </button>
+				</div>
+			  )}
+			</div>
 
             {/* Billing & Travel */}
             <h3 style={{ marginBottom: '12px', color: '#1a73e8' }}>Billing & Travel</h3>

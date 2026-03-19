@@ -6,14 +6,13 @@ import { logAudit } from '../utils/auditLog';
 function AssignEmployeesModal({ job, onClose, onSave }) {
   const [employees, setEmployees] = useState([]);
   const [allJobs, setAllJobs] = useState([]);
+  const [timeOffRecords, setTimeOffRecords] = useState([]);
   const [selectedEmployees, setSelectedEmployees] = useState([]);
   const [equipmentCarriers, setEquipmentCarriers] = useState([]);
-
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showWarning, setShowWarning] = useState(null);
-  const [timeOffRecords, setTimeOffRecords] = useState([]);
 
   useEffect(() => {
     loadData();
@@ -21,9 +20,10 @@ function AssignEmployeesModal({ job, onClose, onSave }) {
 
   const loadData = async () => {
     try {
-      const [employeesSnap, jobsSnap] = await Promise.all([
+      const [employeesSnap, jobsSnap, timeOffSnap] = await Promise.all([
         getDocs(collection(db, 'employees')),
-        getDocs(collection(db, 'jobs'))
+        getDocs(collection(db, 'jobs')),
+        getDocs(collection(db, 'timeOff'))
       ]);
 
       let employeesData = employeesSnap.docs.map(doc => ({
@@ -36,6 +36,11 @@ function AssignEmployeesModal({ job, onClose, onSave }) {
         ...doc.data()
       }));
 
+      let timeOffData = timeOffSnap.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+
       // Filter active employees only
       employeesData = employeesData.filter(emp => emp.isActive !== false);
 
@@ -44,7 +49,7 @@ function AssignEmployeesModal({ job, onClose, onSave }) {
 
       setEmployees(employeesData);
       setAllJobs(jobsData);
-	  setTimeOffRecords(timeOffData);
+      setTimeOffRecords(timeOffData);
 
       // Pre-select already assigned employees
       if (job.assignedFlaggers) {
@@ -63,7 +68,6 @@ function AssignEmployeesModal({ job, onClose, onSave }) {
           .map(emp => emp.id);
         setEquipmentCarriers(preSelectedCarriers);
       }
-
     } catch (err) {
       console.error('Error loading data:', err);
     } finally {
@@ -71,32 +75,89 @@ function AssignEmployeesModal({ job, onClose, onSave }) {
     }
   };
 
+  const parseDate = (dateStr) => {
+    if (!dateStr) return null;
+    
+    // If YYYY-MM-DD format
+    if (dateStr.includes('-')) {
+      const [year, month, day] = dateStr.split('-');
+      return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+    }
+    
+    // If MM/DD/YYYY format (from Firestore)
+    if (dateStr.includes('/')) {
+      const [month, day, year] = dateStr.split('/');
+      return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+    }
+    
+    return new Date(dateStr);
+  };
+
+  const isDateInRange = (checkDate, startDate, endDate) => {
+    try {
+      const check = parseDate(checkDate);
+      const start = parseDate(startDate);
+      const end = parseDate(endDate);
+      
+      if (!check || !start || !end) return false;
+      
+      check.setHours(0, 0, 0, 0);
+      start.setHours(0, 0, 0, 0);
+      end.setHours(0, 0, 0, 0);
+
+      return check >= start && check <= end;
+    } catch (error) {
+      console.error('Date parsing error:', error);
+      return false;
+    }
+  };
+
+  const checkTimeConflict = (jobTime, timeOffStart, timeOffEnd) => {
+    if (!jobTime || !timeOffStart || !timeOffEnd) return false;
+
+    // Convert to 24-hour for comparison
+    const parseTime = (timeStr) => {
+      const [time, period] = timeStr.split(' ');
+      let [hours, minutes] = time.split(':').map(Number);
+      
+      if (period === 'PM' && hours !== 12) hours += 12;
+      if (period === 'AM' && hours === 12) hours = 0;
+      
+      return hours * 60 + minutes; // Return minutes since midnight
+    };
+
+    // Convert HH:MM format from time-off
+    const parseTime24 = (timeStr) => {
+      const [hours, minutes] = timeStr.split(':').map(Number);
+      return hours * 60 + minutes;
+    };
+
+    try {
+      const jobMinutes = parseTime(jobTime);
+      const startMinutes = parseTime24(timeOffStart);
+      const endMinutes = parseTime24(timeOffEnd);
+
+      return jobMinutes >= startMinutes && jobMinutes < endMinutes;
+    } catch (error) {
+      console.error('Time parsing error:', error);
+      return false;
+    }
+  };
+
   const getEmployeeStatus = (employee) => {
-    // Skip checking the current job
-    const otherJobs = allJobs.filter(j => j.id !== job.id && j.initialJobDate === job.initialJobDate);
-	  const timeOff = timeOffRecords.find(to => {
+  // Check time-off first
+  const timeOff = timeOffRecords.find(to => {
     return to.employeeName === employee.fullName && isDateInRange(job.initialJobDate, to.startDate, to.endDate);
   });
 
   if (timeOff) {
     if (timeOff.isPartialDay) {
-      // Check if job time conflicts with time-off
-      const jobTime = job.initialJobTime;
-      const conflict = checkTimeConflict(jobTime, timeOff.startTime, timeOff.endTime);
-      
-      if (conflict) {
-        return {
-          status: 'timeoff_partial_conflict',
-          timeOff,
-          message: `Off ${timeOff.startTime} - ${timeOff.endTime} (${timeOff.reason})`
-        };
-      } else {
-        return {
-          status: 'timeoff_partial_available',
-          timeOff,
-          message: `Partial day off (${timeOff.startTime} - ${timeOff.endTime}), available for job`
-        };
-      }
+      // ALWAYS show warning for partial day - job will likely run past the time off
+      return {
+        status: 'timeoff_partial_warning',
+        timeOff,
+        message: `Partial day off: ${timeOff.startTime} - ${timeOff.endTime} (${timeOff.reason})`
+      };
     } else {
       return {
         status: 'timeoff',
@@ -105,65 +166,35 @@ function AssignEmployeesModal({ job, onClose, onSave }) {
       };
     }
   }
-    for (const otherJob of otherJobs) {
-      // Check if dispatched
-      if (otherJob.dispatchedFlaggers) {
-        const dispatched = otherJob.dispatchedFlaggers.split(',').map(name => name.trim());
-        if (dispatched.includes(employee.fullName)) {
-          return {
-            status: 'dispatched',
-            job: otherJob,
-            message: `Already dispatched to ${otherJob.jobID}`
-          };
-        }
-      }
 
-      // Check if assigned
-      if (otherJob.assignedFlaggers) {
-        const assigned = otherJob.assignedFlaggers.split(',').map(name => name.trim());
-        if (assigned.includes(employee.fullName)) {
-          return {
-            status: 'assigned',
-            job: otherJob,
-            message: `Already assigned to ${otherJob.jobID}`
-          };
-        }
+  // Then check other jobs
+  const otherJobs = allJobs.filter(j => j.id !== job.id && j.initialJobDate === job.initialJobDate);
+
+  for (const otherJob of otherJobs) {
+    if (otherJob.dispatchedFlaggers) {
+      const dispatched = otherJob.dispatchedFlaggers.split(',').map(name => name.trim());
+      if (dispatched.includes(employee.fullName)) {
+        return {
+          status: 'dispatched',
+          job: otherJob,
+          message: `Already dispatched to ${otherJob.jobID}`
+        };
       }
     }
 
-    return { status: 'available' };
-  };
-  const isDateInRange = (checkDate, startDate, endDate) => {
-  const check = new Date(checkDate);
-  const start = new Date(startDate);
-  const end = new Date(endDate);
-  
-  check.setHours(0, 0, 0, 0);
-  start.setHours(0, 0, 0, 0);
-  end.setHours(0, 0, 0, 0);
+    if (otherJob.assignedFlaggers) {
+      const assigned = otherJob.assignedFlaggers.split(',').map(name => name.trim());
+      if (assigned.includes(employee.fullName)) {
+        return {
+          status: 'assigned',
+          job: otherJob,
+          message: `Already assigned to ${otherJob.jobID}`
+        };
+      }
+    }
+  }
 
-  return check >= start && check <= end;
-};
-
-const checkTimeConflict = (jobTime, timeOffStart, timeOffEnd) => {
-  if (!jobTime || !timeOffStart || !timeOffEnd) return false;
-
-  // Convert to 24-hour for comparison
-  const parseTime = (timeStr) => {
-    const [time, period] = timeStr.split(' ');
-    let [hours, minutes] = time.split(':').map(Number);
-    
-    if (period === 'PM' && hours !== 12) hours += 12;
-    if (period === 'AM' && hours === 12) hours = 0;
-    
-    return hours * 60 + minutes; // Return minutes since midnight
-  };
-
-  const jobMinutes = parseTime(jobTime);
-  const startMinutes = parseTime(timeOffStart);
-  const endMinutes = parseTime(timeOffEnd);
-
-  return jobMinutes >= startMinutes && jobMinutes < endMinutes;
+  return { status: 'available' };
 };
 
   const toggleEmployee = (employeeId) => {
@@ -177,8 +208,8 @@ const checkTimeConflict = (jobTime, timeOffStart, timeOffEnd) => {
     return;
   }
 
-  // If on day off or dispatched, show strong warning
-  if (status.status === 'dispatched' || status.status === 'timeoff') {
+  // If on day off, dispatched, or partial day - show warning
+  if (status.status === 'dispatched' || status.status === 'timeoff' || status.status === 'timeoff_partial_warning') {
     setShowWarning({
       employee,
       status,
@@ -190,8 +221,8 @@ const checkTimeConflict = (jobTime, timeOffStart, timeOffEnd) => {
     return;
   }
 
-  // If partial day conflict or just assigned, show lighter warning
-  if (status.status === 'assigned' || status.status === 'timeoff_partial_conflict') {
+  // If just assigned to another job, show lighter warning
+  if (status.status === 'assigned') {
     setShowWarning({
       employee,
       status,
@@ -203,7 +234,7 @@ const checkTimeConflict = (jobTime, timeOffStart, timeOffEnd) => {
     return;
   }
 
-  // Available or partial day but available - add directly
+  // Available - add directly
   setSelectedEmployees(prev => [...prev, employeeId]);
 };
 
@@ -216,42 +247,41 @@ const checkTimeConflict = (jobTime, timeOffStart, timeOffEnd) => {
   };
 
   const handleSave = async () => {
-  setSaving(true);
-  try {
-    // Get selected employee names
-    const assignedNames = employees
-      .filter(emp => selectedEmployees.includes(emp.id))
-      .map(emp => emp.fullName)
-      .join(', ');
+    setSaving(true);
+    try {
+      // Get selected employee names
+      const assignedNames = employees
+        .filter(emp => selectedEmployees.includes(emp.id))
+        .map(emp => emp.fullName)
+        .join(', ');
 
-    // Get equipment carrier names (just names, equipment comes from employee records)
-    const carrierNames = employees
-      .filter(emp => equipmentCarriers.includes(emp.id))
-      .map(emp => emp.fullName)
-      .join(', ');
+      // Get equipment carrier names
+      const carrierNames = employees
+        .filter(emp => equipmentCarriers.includes(emp.id))
+        .map(emp => emp.fullName)
+        .join(', ');
 
-    const updates = {
-      assignedFlaggers: assignedNames,
-      equipmentCarrier: carrierNames,
-      // Remove the shared equipment fields - we'll get from employee records instead
-      updatedAt: serverTimestamp(),
-      updatedBy: auth.currentUser?.email || 'unknown'
-    };
+      const updates = {
+        assignedFlaggers: assignedNames,
+        equipmentCarrier: carrierNames,
+        updatedAt: serverTimestamp(),
+        updatedBy: auth.currentUser?.email || 'unknown'
+      };
 
-    await updateDoc(doc(db, 'jobs', job.id), updates);
-    await logAudit('ASSIGN_EMPLOYEES', 'jobs', job.jobID, { 
-      assignedFlaggers: assignedNames,
-      equipmentCarriers: carrierNames 
-    });
+      await updateDoc(doc(db, 'jobs', job.id), updates);
+      await logAudit('ASSIGN_EMPLOYEES', 'jobs', job.jobID, { 
+        assignedFlaggers: assignedNames,
+        equipmentCarriers: carrierNames 
+      });
 
-    onSave();
-    onClose();
-  } catch (err) {
-    alert('Error saving assignments: ' + err.message);
-  } finally {
-    setSaving(false);
-  }
-};
+      onSave();
+      onClose();
+    } catch (err) {
+      alert('Error saving assignments: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const filteredEmployees = employees.filter(emp => {
     const search = searchTerm.toLowerCase();
@@ -276,9 +306,7 @@ filteredEmployees.forEach(emp => {
     available.push(emp);
   } else if (status.status === 'timeoff') {
     dayOff.push({ ...emp, statusInfo: status });
-  } else if (status.status === 'timeoff_partial_conflict') {
-    partialDayOff.push({ ...emp, statusInfo: status });
-  } else if (status.status === 'timeoff_partial_available') {
+  } else if (status.status === 'timeoff_partial_warning') {
     partialDayOff.push({ ...emp, statusInfo: status });
   } else if (status.status === 'assigned') {
     warnings.push({ ...emp, statusInfo: status });
@@ -444,6 +472,48 @@ filteredEmployees.forEach(emp => {
               </div>
             )}
 
+            {/* Partial Day Off */}
+            {partialDayOff.length > 0 && (
+              <div style={{ marginBottom: '16px' }}>
+                <h3 style={{ fontSize: '14px', fontWeight: '600', marginBottom: '8px', color: '#f57c00' }}>
+                  ⏰ Partial Day Off ({partialDayOff.length})
+                </h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {partialDayOff.map(emp => (
+                    <EmployeeRow
+                      key={emp.id}
+                      employee={emp}
+                      isSelected={selectedEmployees.includes(emp.id)}
+                      onToggle={() => toggleEmployee(emp.id)}
+                      statusColor="#f57c00"
+                      statusMessage={emp.statusInfo.message}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Day Off */}
+            {dayOff.length > 0 && (
+              <div style={{ marginBottom: '16px' }}>
+                <h3 style={{ fontSize: '14px', fontWeight: '600', marginBottom: '8px', color: '#9e9e9e' }}>
+                  📅 Day Off ({dayOff.length})
+                </h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {dayOff.map(emp => (
+                    <EmployeeRow
+                      key={emp.id}
+                      employee={emp}
+                      isSelected={selectedEmployees.includes(emp.id)}
+                      onToggle={() => toggleEmployee(emp.id)}
+                      statusColor="#9e9e9e"
+                      statusMessage={emp.statusInfo.message}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Warning - Assigned but not dispatched */}
             {warnings.length > 0 && (
               <div style={{ marginBottom: '16px' }}>
@@ -485,48 +555,6 @@ filteredEmployees.forEach(emp => {
                 </div>
               </div>
             )}
-			
-			{/* Day Off */}
-{dayOff.length > 0 && (
-  <div style={{ marginBottom: '16px' }}>
-    <h3 style={{ fontSize: '14px', fontWeight: '600', marginBottom: '8px', color: '#9e9e9e' }}>
-      📅 Day Off ({dayOff.length})
-    </h3>
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-      {dayOff.map(emp => (
-        <EmployeeRow
-          key={emp.id}
-          employee={emp}
-          isSelected={selectedEmployees.includes(emp.id)}
-          onToggle={() => toggleEmployee(emp.id)}
-          statusColor="#9e9e9e"
-          statusMessage={emp.statusInfo.message}
-        />
-      ))}
-    </div>
-  </div>
-)}
-
-{/* Partial Day Off */}
-{partialDayOff.length > 0 && (
-  <div style={{ marginBottom: '16px' }}>
-    <h3 style={{ fontSize: '14px', fontWeight: '600', marginBottom: '8px', color: '#f57c00' }}>
-      ⏰ Partial Day Off ({partialDayOff.length})
-    </h3>
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-      {partialDayOff.map(emp => (
-        <EmployeeRow
-          key={emp.id}
-          employee={emp}
-          isSelected={selectedEmployees.includes(emp.id)}
-          onToggle={() => toggleEmployee(emp.id)}
-          statusColor="#f57c00"
-          statusMessage={emp.statusInfo.message}
-        />
-      ))}
-    </div>
-  </div>
-)}
 
             {filteredEmployees.length === 0 && (
               <div style={{ textAlign: 'center', padding: '40px', color: '#5f6368' }}>
@@ -560,7 +588,7 @@ filteredEmployees.forEach(emp => {
               ? 'has the day off:'
               : showWarning.status.status === 'dispatched' 
               ? 'is already dispatched to another job:'
-              : showWarning.status.status.includes('timeoff')
+              : showWarning.status.status === 'timeoff_partial_warning'
               ? 'has a partial day off:'
               : 'is already assigned to another job:'
           }
@@ -576,8 +604,11 @@ filteredEmployees.forEach(emp => {
             <strong>{showWarning.status.timeOff.reason}</strong><br />
             {showWarning.status.timeOff.isPartialDay ? (
               <>
-                {showWarning.status.timeOff.startTime} - {showWarning.status.timeOff.endTime}<br />
+                Off: {showWarning.status.timeOff.startTime} - {showWarning.status.timeOff.endTime}<br />
                 Job starts: {job.initialJobTime}
+                <div style={{ marginTop: '8px', fontSize: '13px', color: '#5f6368' }}>
+                  ⚠️ Job will likely run past their time-off window
+                </div>
               </>
             ) : (
               <>
