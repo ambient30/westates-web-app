@@ -193,6 +193,17 @@ function EmployeeDetailsModal({ employee, onClose, onEdit, canUpdate, canDelete,
     return 'N/A';
   };
 
+  const formatValue = (value) => {
+    if (value === null || value === undefined) return 'N/A';
+    if (typeof value === 'boolean') return formatBoolean(value);
+    if (typeof value === 'object') return JSON.stringify(value, null, 2);
+    return String(value);
+  };
+
+  // Get custom parameters
+  const customParams = employee.custom || {};
+  const hasCustomParams = Object.keys(customParams).length > 0;
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '800px' }}>
@@ -275,6 +286,31 @@ function EmployeeDetailsModal({ employee, onClose, onEdit, canUpdate, canDelete,
             </>
           )}
 
+          {/* Custom Parameters */}
+          {hasCustomParams && (
+            <>
+              <h3 style={{ marginBottom: '12px', color: '#1a73e8' }}>Custom Parameters</h3>
+              <div style={{ 
+                background: '#fff3e0', 
+                padding: '16px', 
+                borderRadius: '4px',
+                marginBottom: '24px',
+                border: '1px solid #ffb74d'
+              }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '16px' }}>
+                  {Object.entries(customParams).map(([key, value]) => (
+                    <InfoField 
+                      key={key} 
+                      label={key} 
+                      value={formatValue(value)}
+                      isCustom={true}
+                    />
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+
           {/* Metadata */}
           <h3 style={{ marginBottom: '12px', color: '#1a73e8' }}>System Information</h3>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '16px' }}>
@@ -305,11 +341,16 @@ function EmployeeDetailsModal({ employee, onClose, onEdit, canUpdate, canDelete,
   );
 }
 
-function InfoField({ label, value }) {
+function InfoField({ label, value, isCustom = false }) {
   return (
     <div>
-      <div style={{ fontSize: '12px', color: '#5f6368', marginBottom: '4px' }}>
-        {label}
+      <div style={{ 
+        fontSize: '12px', 
+        color: isCustom ? '#e65100' : '#5f6368', 
+        marginBottom: '4px',
+        fontWeight: isCustom ? '600' : '400'
+      }}>
+        {label} {isCustom && '⭐'}
       </div>
       <div style={{ fontSize: '14px', color: '#202124', fontWeight: '500' }}>
         {value || 'N/A'}

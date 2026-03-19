@@ -5,6 +5,8 @@ import { hasPermission } from '../utils/permissions';
 import CreateJobModal from './CreateJobModal';
 import EditJobModal from './EditJobModal';
 import AssignEmployeesModal from './AssignEmployeesModal';
+import JobDetailsModal from './JobDetailsModal';
+
 
 function JobsList({ permissions }) {
   const [jobs, setJobs] = useState([]);
@@ -13,6 +15,7 @@ function JobsList({ permissions }) {
   const [showCreateJob, setShowCreateJob] = useState(false);
   const [editingJob, setEditingJob] = useState(null);
   const [assigningJob, setAssigningJob] = useState(null);
+  const [viewingJob, setViewingJob] = useState(null);
 
   const canCreate = hasPermission(permissions, 'jobs', 'create');
   const canUpdate = hasPermission(permissions, 'jobs', 'update');
@@ -42,7 +45,6 @@ function JobsList({ permissions }) {
     }
   };
 
-  // Filter by search
   const filteredJobs = jobs.filter(job => {
     if (!searchTerm) return true;
     
@@ -56,7 +58,6 @@ function JobsList({ permissions }) {
     );
   });
 
-  // Categorize jobs
   const categorizedJobs = categorizeJobs(filteredJobs);
 
   if (loading) {
@@ -70,7 +71,6 @@ function JobsList({ permissions }) {
 
   return (
     <div>
-      {/* Header */}
       <div className="jobs-header">
         <h2>Jobs Summary</h2>
         <div className="jobs-actions">
@@ -94,7 +94,6 @@ function JobsList({ permissions }) {
         </div>
       </div>
 
-      {/* Jobs Sections */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
         {Object.keys(categorizedJobs).every(key => categorizedJobs[key].length === 0) ? (
           <div className="empty-state">
@@ -107,7 +106,6 @@ function JobsList({ permissions }) {
           </div>
         ) : (
           <>
-            {/* Job Errors */}
             {categorizedJobs.errors.length > 0 && (
               <WeekSection
                 title="Job Errors"
@@ -116,10 +114,10 @@ function JobsList({ permissions }) {
                 canUpdate={canUpdate}
                 onEdit={setEditingJob}
                 onAssign={setAssigningJob}
+				onViewDetails={setViewingJob}
               />
             )}
 
-            {/* This Week */}
             {categorizedJobs.thisWeek.length > 0 && (
               <WeekSection
                 title="This Week"
@@ -128,10 +126,10 @@ function JobsList({ permissions }) {
                 canUpdate={canUpdate}
                 onEdit={setEditingJob}
                 onAssign={setAssigningJob}
+				onViewDetails={setViewingJob}
               />
             )}
 
-            {/* Next Week */}
             {categorizedJobs.nextWeek.length > 0 && (
               <WeekSection
                 title="Next Week"
@@ -140,10 +138,10 @@ function JobsList({ permissions }) {
                 canUpdate={canUpdate}
                 onEdit={setEditingJob}
                 onAssign={setAssigningJob}
+				onViewDetails={setViewingJob}
               />
             )}
 
-            {/* Future Jobs */}
             {categorizedJobs.future.length > 0 && (
               <WeekSection
                 title="Future Jobs"
@@ -152,10 +150,10 @@ function JobsList({ permissions }) {
                 canUpdate={canUpdate}
                 onEdit={setEditingJob}
                 onAssign={setAssigningJob}
+				onViewDetails={setViewingJob}
               />
             )}
 
-            {/* Potential Returns */}
             {categorizedJobs.potentialReturns.length > 0 && (
               <WeekSection
                 title="Potential Returns"
@@ -164,13 +162,13 @@ function JobsList({ permissions }) {
                 canUpdate={canUpdate}
                 onEdit={setEditingJob}
                 onAssign={setAssigningJob}
+				onViewDetails={setViewingJob}
               />
             )}
           </>
         )}
       </div>
 
-      {/* Modals */}
       {showCreateJob && (
         <CreateJobModal
           onClose={() => setShowCreateJob(false)}
@@ -202,11 +200,22 @@ function JobsList({ permissions }) {
           }}
         />
       )}
+	  
+	  {viewingJob && (
+		  <JobDetailsModal
+			job={viewingJob}
+			permissions={permissions}
+			onClose={() => setViewingJob(null)}
+			onUpdate={() => {
+			  setViewingJob(null);
+			  loadJobs();
+			}}
+		  />
+		)}
     </div>
   );
 }
 
-// Helper function to categorize jobs
 function categorizeJobs(jobs) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -214,13 +223,11 @@ function categorizeJobs(jobs) {
   const yesterday = new Date(today);
   yesterday.setDate(yesterday.getDate() - 1);
 
-  // Get this week's Saturday (end of week)
   const thisWeekEnd = new Date(today);
-  const daysUntilSaturday = 6 - today.getDay(); // 0=Sunday, 6=Saturday
+  const daysUntilSaturday = 6 - today.getDay();
   thisWeekEnd.setDate(today.getDate() + daysUntilSaturday);
   thisWeekEnd.setHours(23, 59, 59, 999);
 
-  // Get next week's Sunday and Saturday
   const nextWeekStart = new Date(thisWeekEnd);
   nextWeekStart.setDate(nextWeekStart.getDate() + 1);
   nextWeekStart.setHours(0, 0, 0, 0);
@@ -238,29 +245,37 @@ function categorizeJobs(jobs) {
   };
 
   jobs.forEach(job => {
-    // No date = Potential Returns
     if (!job.initialJobDate) {
       categorized.potentialReturns.push(job);
       return;
     }
 
-    const jobDate = new Date(job.initialJobDate);
+    // Parse MM/DD/YYYY or M/D/YYYY format
+    const parts = job.initialJobDate.split('/');
+    if (parts.length !== 3) {
+      categorized.potentialReturns.push(job);
+      return;
+    }
+
+    const month = parseInt(parts[0]);
+    const day = parseInt(parts[1]);
+    const year = parseInt(parts[2]);
+    
+    // Create date object
+    const jobDate = new Date(year, month - 1, day);
     jobDate.setHours(0, 0, 0, 0);
 
-    // Yesterday or earlier = Job Error
+    // Debug logging
+    console.log(`Job ${job.jobID}: Date string="${job.initialJobDate}", Parsed=${jobDate.toLocaleDateString()}, Today=${today.toLocaleDateString()}, ThisWeekEnd=${thisWeekEnd.toLocaleDateString()}`);
+
+    // Categorize
     if (jobDate <= yesterday) {
       categorized.errors.push(job);
-    }
-    // Today through this Saturday = This Week
-    else if (jobDate <= thisWeekEnd) {
+    } else if (jobDate >= today && jobDate <= thisWeekEnd) {
       categorized.thisWeek.push(job);
-    }
-    // Next Sunday through next Saturday = Next Week
-    else if (jobDate >= nextWeekStart && jobDate <= nextWeekEnd) {
+    } else if (jobDate >= nextWeekStart && jobDate <= nextWeekEnd) {
       categorized.nextWeek.push(job);
-    }
-    // After next week = Future
-    else {
+    } else {
       categorized.future.push(job);
     }
   });
@@ -270,46 +285,63 @@ function categorizeJobs(jobs) {
     categorized[key].sort((a, b) => {
       if (!a.initialJobDate) return 1;
       if (!b.initialJobDate) return -1;
-      return new Date(a.initialJobDate) - new Date(b.initialJobDate);
+      
+      const [monthA, dayA, yearA] = a.initialJobDate.split('/').map(Number);
+      const [monthB, dayB, yearB] = b.initialJobDate.split('/').map(Number);
+      
+      const dateA = new Date(yearA, monthA - 1, dayA);
+      const dateB = new Date(yearB, monthB - 1, dayB);
+      
+      return dateA - dateB;
     });
   });
 
   return categorized;
 }
 
-function WeekSection({ title, jobs, color, canUpdate, onEdit, onAssign }) {
-  // Group jobs by date within this section
+function WeekSection({ title, jobs, color, canUpdate, onEdit, onAssign, onViewDetails }) {
   const normalizeDate = (dateStr) => {
-  if (!dateStr) return 'No Date';
-  
-  try {
-    let d;
+    if (!dateStr) return 'No Date';
     
-    if (dateStr instanceof Date) {
-      d = dateStr;
-    } else if (typeof dateStr === 'string' && dateStr.includes('/')) {
+    try {
       const parts = dateStr.split('/');
       const month = parseInt(parts[0]);
       const day = parseInt(parts[1]);
       const year = parseInt(parts[2]);
-      d = new Date(year, month - 1, day);
-    } else if (typeof dateStr === 'string' && dateStr.includes('-')) {
-      d = new Date(dateStr);
-    } else {
-      d = new Date(dateStr);
+      const d = new Date(year, month - 1, day);
+      
+      if (isNaN(d.getTime())) return 'No Date';
+      
+      const normalizedMonth = String(d.getMonth() + 1).padStart(2, '0');
+      const normalizedDay = String(d.getDate()).padStart(2, '0');
+      const normalizedYear = d.getFullYear();
+      return `${normalizedMonth}/${normalizedDay}/${normalizedYear}`;
+    } catch {
+      return 'No Date';
     }
+  };
+
+  const jobsByDate = jobs.reduce((groups, job) => {
+    const normalizedDate = normalizeDate(job.initialJobDate);
+    if (!groups[normalizedDate]) {
+      groups[normalizedDate] = [];
+    }
+    groups[normalizedDate].push(job);
+    return groups;
+  }, {});
+
+  const sortedDates = Object.keys(jobsByDate).sort((a, b) => {
+    if (a === 'No Date') return 1;
+    if (b === 'No Date') return -1;
     
-    if (isNaN(d.getTime())) return 'No Date';
+    const [monthA, dayA, yearA] = a.split('/').map(Number);
+    const [monthB, dayB, yearB] = b.split('/').map(Number);
     
-    // Return normalized format: MM/DD/YYYY (with leading zeros)
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    const year = d.getFullYear();
-    return `${month}/${day}/${year}`;
-  } catch {
-    return 'No Date';
-  }
-};
+    const dateA = new Date(yearA, monthA - 1, dayA);
+    const dateB = new Date(yearB, monthB - 1, dayB);
+    
+    return dateA - dateB;
+  });
 
   return (
     <div style={{ 
@@ -318,7 +350,6 @@ function WeekSection({ title, jobs, color, canUpdate, onEdit, onAssign }) {
       overflow: 'hidden',
       background: 'white'
     }}>
-      {/* Week Header */}
       <div style={{
         background: color,
         color: 'white',
@@ -335,7 +366,6 @@ function WeekSection({ title, jobs, color, canUpdate, onEdit, onAssign }) {
         </span>
       </div>
 
-      {/* Jobs grouped by date */}
       <div>
         {sortedDates.map(date => (
           <DateGroup
@@ -345,6 +375,7 @@ function WeekSection({ title, jobs, color, canUpdate, onEdit, onAssign }) {
             canUpdate={canUpdate}
             onEdit={onEdit}
             onAssign={onAssign}
+			onViewDetails={onViewDetails}
           />
         ))}
       </div>
@@ -352,38 +383,19 @@ function WeekSection({ title, jobs, color, canUpdate, onEdit, onAssign }) {
   );
 }
 
-function DateGroup({ date, jobs, canUpdate, onEdit, onAssign }) {
+function DateGroup({ date, jobs, canUpdate, onEdit, onAssign, onViewDetails }) {
   const formatDate = (dateStr) => {
     if (dateStr === 'No Date') return 'No Date';
     
     try {
-      // Try to parse the date - handle multiple formats
-      let d;
+      const parts = dateStr.split('/');
+      const month = parseInt(parts[0]) - 1;
+      const day = parseInt(parts[1]);
+      const year = parseInt(parts[2]);
       
-      // Check if it's already a Date object
-      if (dateStr instanceof Date) {
-        d = dateStr;
-      }
-      // Try parsing MM/DD/YYYY or M/D/YYYY format
-      else if (typeof dateStr === 'string' && dateStr.includes('/')) {
-        const parts = dateStr.split('/');
-        const month = parseInt(parts[0]) - 1; // Month is 0-indexed
-        const day = parseInt(parts[1]);
-        const year = parseInt(parts[2]);
-        d = new Date(year, month, day);
-      }
-      // Try parsing ISO format (YYYY-MM-DD)
-      else if (typeof dateStr === 'string' && dateStr.includes('-')) {
-        d = new Date(dateStr);
-      }
-      // Try standard Date parsing as fallback
-      else {
-        d = new Date(dateStr);
-      }
+      const d = new Date(year, month, day);
       
-      // Check if date is valid
       if (isNaN(d.getTime())) {
-        console.error('Invalid date:', dateStr);
         return `Invalid Date - ${dateStr}`;
       }
       
@@ -395,14 +407,12 @@ function DateGroup({ date, jobs, canUpdate, onEdit, onAssign }) {
       });
       return `${dayOfWeek} - ${formattedDate}`;
     } catch (error) {
-      console.error('Error formatting date:', dateStr, error);
       return `Invalid Date - ${dateStr}`;
     }
   };
 
   return (
     <div>
-      {/* Date subheader */}
       <div style={{
         background: '#f8f9fa',
         padding: '8px 16px',
@@ -414,7 +424,6 @@ function DateGroup({ date, jobs, canUpdate, onEdit, onAssign }) {
         {formatDate(date)}
       </div>
 
-      {/* Jobs for this date */}
       <div style={{ padding: '8px' }}>
         {jobs.map(job => (
           <JobRow 
@@ -423,6 +432,7 @@ function DateGroup({ date, jobs, canUpdate, onEdit, onAssign }) {
             canUpdate={canUpdate}
             onEdit={onEdit}
             onAssign={onAssign}
+			onViewDetails={onViewDetails}
           />
         ))}
       </div>
@@ -430,7 +440,33 @@ function DateGroup({ date, jobs, canUpdate, onEdit, onAssign }) {
   );
 }
 
-function JobRow({ job, canUpdate, onEdit, onAssign }) {
+function JobRow({ job, canUpdate, onEdit, onAssign, onViewDetails }) {
+  const [employeeData, setEmployeeData] = useState([]);
+  
+  useEffect(() => {
+    // Load employee data for equipment carriers
+    if (job.equipmentCarrier) {
+      loadEmployeeEquipment();
+    }
+  }, [job.equipmentCarrier]);
+
+  const loadEmployeeEquipment = async () => {
+    try {
+      const carriers = job.equipmentCarrier.split(',').map(name => name.trim());
+      const employeesSnap = await getDocs(collection(db, 'employees'));
+      const employees = employeesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      
+      // Find employee data for each carrier
+      const carrierData = carriers.map(carrierName => {
+        return employees.find(emp => emp.fullName === carrierName);
+      }).filter(Boolean); // Remove any not found
+      
+      setEmployeeData(carrierData);
+    } catch (err) {
+      console.error('Error loading employee equipment:', err);
+    }
+  };
+
   const assignedFlaggers = job.assignedFlaggers 
     ? job.assignedFlaggers.split(',').map(name => name.trim()).filter(Boolean)
     : [];
@@ -443,36 +479,42 @@ function JobRow({ job, canUpdate, onEdit, onAssign }) {
   const placeholdersNeeded = Math.max(0, amountOfFlaggers - assignedFlaggers.length);
 
   const formatEquipmentCarrier = () => {
-    if (!job.equipmentCarrier) return null;
+    if (employeeData.length === 0) return '-';
     
-    const parts = [];
-    if (job.equipmentCarrierSigns) parts.push(job.equipmentCarrierSigns);
-    if (job.equipmentCarrierExtraSigns) parts.push(job.equipmentCarrierExtraSigns);
-    if (job.equipmentCarrierCones) parts.push(`${job.equipmentCarrierCones} cones`);
-    
-    if (parts.length === 0) return null;
-    
-    return `${formatNameFirstLastInitial(job.equipmentCarrier)} - ${parts.join(', ')}`;
+    return employeeData.map(emp => {
+      const parts = [];
+      
+      // Add equipment from employee record
+      if (emp.signs) parts.push(emp.signs);
+      if (emp.extraSigns) parts.push(emp.extraSigns);
+      if (emp.cones) parts.push(`${emp.cones} cones`);
+      
+      // Format name as "FirstName LastInitial"
+      const nameParts = emp.fullName.trim().split(' ');
+      const firstName = nameParts[0];
+      const lastInitial = nameParts.length > 1 ? nameParts[nameParts.length - 1].charAt(0) : '';
+      const formattedName = lastInitial ? `${firstName} ${lastInitial}` : firstName;
+      
+      // Return formatted line
+      if (parts.length > 0) {
+        return `${formattedName} - ${parts.join(', ')}`;
+      } else {
+        return `${formattedName} - No equipment`;
+      }
+    }).join('\n'); // Each carrier on new line
   };
 
-  const formatNameFirstLastInitial = (fullName) => {
-    const parts = fullName.trim().split(' ');
-    if (parts.length === 1) return parts[0];
-    const firstName = parts[0];
-    const lastInitial = parts[parts.length - 1].charAt(0);
-    return `${firstName} ${lastInitial}`;
+  const handleRowClick = (e) => {
+    if (e.target.tagName !== 'BUTTON') {
+      onViewDetails && onViewDetails(job);
+    }
   };
 
   return (
-    <div style={{
-      display: 'flex',
-      alignItems: 'flex-start',
-      gap: '12px',
-      padding: '10px 8px',
-      borderBottom: '1px solid #e0e0e0',
-      fontSize: '14px'
-    }}>
-      {/* Flaggers */}
+    <div 
+      className="job-row"
+      onClick={handleRowClick}
+    >
       <div style={{ flex: '0 0 180px', minWidth: '180px' }}>
         <div style={{ fontWeight: '600', fontSize: '12px', color: '#5f6368', marginBottom: '4px' }}>
           Flaggers
@@ -511,7 +553,6 @@ function JobRow({ job, canUpdate, onEdit, onAssign }) {
         )}
       </div>
 
-      {/* Job Length */}
       <div style={{ flex: '0 0 80px' }}>
         <div style={{ fontWeight: '600', fontSize: '12px', color: '#5f6368', marginBottom: '4px' }}>
           Length
@@ -519,7 +560,6 @@ function JobRow({ job, canUpdate, onEdit, onAssign }) {
         <div>{job.jobLength || '-'}</div>
       </div>
 
-      {/* Time */}
       <div style={{ flex: '0 0 80px' }}>
         <div style={{ fontWeight: '600', fontSize: '12px', color: '#5f6368', marginBottom: '4px' }}>
           Time
@@ -527,7 +567,6 @@ function JobRow({ job, canUpdate, onEdit, onAssign }) {
         <div>{job.initialJobTime || 'TBD'}</div>
       </div>
 
-      {/* Billing */}
       <div style={{ flex: '0 0 120px' }}>
         <div style={{ fontWeight: '600', fontSize: '12px', color: '#5f6368', marginBottom: '4px' }}>
           Billing
@@ -535,7 +574,6 @@ function JobRow({ job, canUpdate, onEdit, onAssign }) {
         <div>{job.billing || '-'}</div>
       </div>
 
-      {/* Location */}
       <div style={{ flex: '1 1 200px', minWidth: '150px' }}>
         <div style={{ fontWeight: '600', fontSize: '12px', color: '#5f6368', marginBottom: '4px' }}>
           Location
@@ -543,27 +581,31 @@ function JobRow({ job, canUpdate, onEdit, onAssign }) {
         <div>{job.location || '-'}</div>
       </div>
 
-      {/* Equipment Carrier */}
       <div style={{ flex: '1 1 200px', minWidth: '150px' }}>
         <div style={{ fontWeight: '600', fontSize: '12px', color: '#5f6368', marginBottom: '4px' }}>
           Equipment
         </div>
-        <div style={{ fontSize: '13px' }}>
-          {formatEquipmentCarrier() || '-'}
+        <div style={{ fontSize: '13px', whiteSpace: 'pre-line' }}>
+          {formatEquipmentCarrier()}
         </div>
       </div>
 
-      {/* Actions */}
       {canUpdate && (
         <div style={{ flex: '0 0 140px', display: 'flex', gap: '4px', alignItems: 'flex-end' }}>
           <button 
-            onClick={() => onAssign(job)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onAssign(job);
+            }}
             className="btn btn-secondary btn-small"
           >
             Assign
           </button>
           <button 
-            onClick={() => onEdit(job)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit(job);
+            }}
             className="btn btn-secondary btn-small"
           >
             Edit

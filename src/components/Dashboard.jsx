@@ -7,6 +7,7 @@ import EmployeesList from './EmployeesList';
 import ContractorsList from './ContractorsList';
 import RoleManager from './RoleManager';
 import UserManager from './UserManager';
+import AvailabilityView from './AvailabilityView';
 
 function Dashboard({ user, permissions }) {
   const [activeTab, setActiveTab] = useState('jobs');
@@ -41,79 +42,76 @@ function Dashboard({ user, permissions }) {
       </header>
 
       <nav className="nav">
-        <div className="nav-content">
-          {canViewJobs && (
-            <button
-              className={`nav-item ${activeTab === 'jobs' ? 'active' : ''}`}
-              onClick={() => setActiveTab('jobs')}
-            >
-              Jobs
-            </button>
-          )}
-          {canViewEmployees && (
-            <button
-              className={`nav-item ${activeTab === 'employees' ? 'active' : ''}`}
-              onClick={() => setActiveTab('employees')}
-            >
-              Employees
-            </button>
-          )}
-          {canViewContractors && (
-            <button
-              className={`nav-item ${activeTab === 'contractors' ? 'active' : ''}`}
-              onClick={() => setActiveTab('contractors')}
-            >
-              Contractors
-            </button>
-          )}
-          {canViewUsers && (
-            <button
-              className={`nav-item ${activeTab === 'users' ? 'active' : ''}`}
-              onClick={() => setActiveTab('users')}
-            >
-              Users
-            </button>
-          )}
-          {canViewRoles && (
-            <button
-              className={`nav-item ${activeTab === 'roles' ? 'active' : ''}`}
-              onClick={() => setActiveTab('roles')}
-            >
-              Roles
-            </button>
-          )}
-          <button
-            className={`nav-item ${activeTab === 'export' ? 'active' : ''}`}
-            onClick={() => setActiveTab('export')}
-          >
-            Export
-          </button>
-        </div>
+        <div className="dashboard-tabs">
+  {hasPermission(permissions, 'jobs', 'read') && (
+    <button
+      className={activeTab === 'jobs' ? 'tab-active' : ''}
+      onClick={() => setActiveTab('jobs')}
+    >
+      Jobs
+    </button>
+  )}
+  {hasPermission(permissions, 'employees', 'read') && (
+    <button
+      className={activeTab === 'employees' ? 'tab-active' : ''}
+      onClick={() => setActiveTab('employees')}
+    >
+      Employees
+    </button>
+  )}
+  {hasPermission(permissions, 'contractors', 'read') && (
+    <button
+      className={activeTab === 'contractors' ? 'tab-active' : ''}
+      onClick={() => setActiveTab('contractors')}
+    >
+      Contractors
+    </button>
+  )}
+  <button
+    className={activeTab === 'availability' ? 'tab-active' : ''}
+    onClick={() => setActiveTab('availability')}
+  >
+    Availability
+  </button>
+  {hasPermission(permissions, 'users', 'read') && (
+    <button
+      className={activeTab === 'users' ? 'tab-active' : ''}
+      onClick={() => setActiveTab('users')}
+    >
+      Users
+    </button>
+  )}
+  {hasPermission(permissions, 'roles', 'read') && (
+    <button
+      className={activeTab === 'roles' ? 'tab-active' : ''}
+      onClick={() => setActiveTab('roles')}
+    >
+      Roles
+    </button>
+  )}
+</div>
       </nav>
 
-      <main className="main-content">
-        {activeTab === 'jobs' && canViewJobs && (
-          <JobsList permissions={permissions} />
-        )}
-        {activeTab === 'employees' && canViewEmployees && (
-          <EmployeesList permissions={permissions} />
-        )}
-        {activeTab === 'contractors' && canViewContractors && (
-          <ContractorsList permissions={permissions} />
-        )}
-        {activeTab === 'users' && canViewUsers && (
-          <UserManager permissions={permissions} />
-        )}
-        {activeTab === 'roles' && canViewRoles && (
-          <RoleManager permissions={permissions} />
-        )}
-        {activeTab === 'export' && (
-          <div className="empty-state">
-            <h3>Export Data</h3>
-            <p>Coming soon...</p>
-          </div>
-        )}
-      </main>
+      <main className="dashboard-main">
+  {activeTab === 'jobs' && hasPermission(permissions, 'jobs', 'read') && (
+    <JobsList permissions={permissions} />
+  )}
+  {activeTab === 'employees' && hasPermission(permissions, 'employees', 'read') && (
+    <EmployeesList permissions={permissions} />
+  )}
+  {activeTab === 'contractors' && hasPermission(permissions, 'contractors', 'read') && (
+    <ContractorsList permissions={permissions} />
+  )}
+  {activeTab === 'availability' && (
+    <AvailabilityView permissions={permissions} />
+  )}
+  {activeTab === 'users' && hasPermission(permissions, 'users', 'read') && (
+    <UserManager />
+  )}
+  {activeTab === 'roles' && hasPermission(permissions, 'roles', 'read') && (
+    <RoleManager />
+  )}
+</main>
     </div>
   );
 }
