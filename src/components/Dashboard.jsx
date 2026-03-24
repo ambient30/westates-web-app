@@ -10,6 +10,9 @@ import UserManager from './UserManager';
 import AvailabilityView from './AvailabilityView';
 import PinksView from './PinksView';
 import RatesManager from './RatesManager';
+import TimeEntryView from './TimeEntryView';
+import PayrollReportView from './PayrollReportView';
+import InvoicingReportView from './InvoicingReportView';
 
 
 
@@ -109,6 +112,25 @@ function Dashboard({ user, permissions }) {
     Rates
   </button>
 )}
+<button
+  className={activeTab === 'timeentry' ? 'tab-active' : ''}
+  onClick={() => setActiveTab('timeentry')}
+>
+  Time Entry
+</button>
+<button
+  className={activeTab === 'payroll' ? 'tab-active' : ''}
+  onClick={() => setActiveTab('payroll')}
+>
+  Payroll
+</button>
+
+<button
+  className={activeTab === 'invoicing' ? 'tab-active' : ''}
+  onClick={() => setActiveTab('invoicing')}
+>
+  Invoicing
+</button>
 </div>
       </nav>
 
@@ -136,6 +158,16 @@ function Dashboard({ user, permissions }) {
 	)}
 	{activeTab === 'rates' && hasPermission(permissions, 'rates', 'read') && (
   <RatesManager permissions={permissions} />
+)}
+{activeTab === 'timeentry' && (
+  <TimeEntryView permissions={permissions} />
+)}
+{activeTab === 'payroll' && (
+  <PayrollReportView permissions={permissions} />
+)}
+
+{activeTab === 'invoicing' && (
+  <InvoicingReportView permissions={permissions} />
 )}
 </main>
     </div>

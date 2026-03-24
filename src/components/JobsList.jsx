@@ -9,6 +9,7 @@ import DispatchFlaggersModal from './DispatchFlaggersModal';
 import ContinueJobModal from './ContinueJobModal';
 import FinishJobModal from './FinishJobModal';
 import ReturnJobModal from './ReturnJobModal';
+import CreateJobModal from './CreateJobModal';
 
 function JobsList({ permissions }) {
   const [jobs, setJobs] = useState([]);
@@ -20,6 +21,7 @@ function JobsList({ permissions }) {
   const [continuingJob, setContinuingJob] = useState(null);
   const [finishingJob, setFinishingJob] = useState(null);
   const [returningJob, setReturningJob] = useState(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
 
   const canUpdate = hasPermission(permissions, 'jobs', 'update');
 
@@ -114,7 +116,7 @@ return (
       <h2>Jobs</h2>
       <div className="jobs-actions">
         {canUpdate && (
-          <button onClick={() => setEditingJob({})} className="btn btn-primary">
+          <button onClick={() => setShowCreateModal(true)} className="btn btn-primary">
             + New Job
           </button>
         )}
@@ -234,6 +236,16 @@ return (
         }}
       />
     )}
+	
+	{showCreateModal && (
+  <CreateJobModal
+    onClose={() => setShowCreateModal(false)}
+    onSave={() => {
+      setShowCreateModal(false);
+      loadJobs();
+    }}
+  />
+)}
 
     {dispatchingJob && (
       <DispatchFlaggersModal

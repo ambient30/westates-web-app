@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { useState, useEffect } from 'react';
+import { collection, updateDoc, doc, getDocs, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { logAudit } from '../utils/auditLog';
 
@@ -26,63 +26,40 @@ function EditJobModal({ job, onClose, onSave }) {
     travelTime: job.travelTime || '',
     travelMiles: job.travelMiles || '',
     otherNotes: job.otherNotes || '',
-    jobSeries: job.jobSeries || ''
+    jobSeries: job.jobSeries || '',
+    rateId: job.rateId || ''
   });
 
-  // Custom parameters
-  const [customParams, setCustomParams] = useState(
-    Object.entries(job.custom || {}).map(([key, value]) => ({
-      key,
-      value: String(value),
-      type: typeof value
-    }))
-  );
-
-  // New parameter being added
-  const [newParam, setNewParam] = useState({ key: '', value: '', type: 'string' });
-
+  const [rates, setRates] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [loadingRates, setLoadingRates] = useState(true);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    loadRates();
+  }, []);
+
+  const loadRates = async () => {
+    try {
+      setLoadingRates(true);
+      const snapshot = await getDocs(collection(db, 'rates'));
+      const ratesData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      ratesData.sort((a, b) => (a.rateName || '').localeCompare(b.rateName || ''));
+      setRates(ratesData);
+    } catch (err) {
+      console.error('Error loading rates:', err);
+      setError('Failed to load rates: ' + err.message);
+    } finally {
+      setLoadingRates(false);
+    }
+  };
 
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
-  };
-
-  const handleCustomParamChange = (index, field, value) => {
-    const updated = [...customParams];
-    updated[index][field] = value;
-    setCustomParams(updated);
-  };
-
-  const removeCustomParam = (index) => {
-    setCustomParams(customParams.filter((_, i) => i !== index));
-  };
-
-  const addNewParam = () => {
-    if (!newParam.key.trim()) {
-      alert('Parameter name is required');
-      return;
-    }
-
-    // Convert value to correct type
-    let convertedValue = newParam.value;
-    if (newParam.type === 'number') {
-      convertedValue = parseFloat(newParam.value) || 0;
-    } else if (newParam.type === 'boolean') {
-      convertedValue = newParam.value === 'true';
-    }
-
-    setCustomParams([
-      ...customParams,
-      {
-        key: newParam.key.trim(),
-        value: convertedValue,
-        type: newParam.type
-      }
-    ]);
-
-    setNewParam({ key: '', value: '', type: 'string' });
   };
 
   const handleSubmit = async (e) => {
@@ -91,19 +68,14 @@ function EditJobModal({ job, onClose, onSave }) {
     setLoading(true);
 
     try {
-      // Build custom parameters object
-      const customObj = {};
-      customParams.forEach(param => {
-        let value = param.value;
-        if (param.type === 'number') {
-          value = parseFloat(value) || 0;
-        } else if (param.type === 'boolean') {
-          value = value === 'true' || value === true;
-        }
-        customObj[param.key] = value;
-      });
+      if (!formData.rateId) {
+        throw new Error('Please select a rate card');
+      }
 
-      const updates = {
+      const selectedRate = rates.find(r => r.id === formData.rateId);
+      const rateName = selectedRate?.rateName || '';
+
+      const jobData = {
         caller: formData.caller.trim(),
         billing: formData.billing.trim(),
         receiver: formData.receiver.trim(),
@@ -126,13 +98,15 @@ function EditJobModal({ job, onClose, onSave }) {
         travelMiles: formData.travelMiles.trim(),
         otherNotes: formData.otherNotes.trim(),
         jobSeries: formData.jobSeries.trim(),
-        custom: customObj,
+        rateId: formData.rateId,
+        rateName: rateName,
+        
         updatedAt: serverTimestamp(),
         updatedBy: auth.currentUser?.email || 'unknown'
       };
 
-      await updateDoc(doc(db, 'jobs', job.id), updates);
-      await logAudit('UPDATE_JOB', 'jobs', job.jobID, updates);
+      await updateDoc(doc(db, 'jobs', job.id), jobData);
+      await logAudit('UPDATE_JOB', 'jobs', job.jobID);
 
       onSave();
       onClose();
@@ -161,6 +135,46 @@ function EditJobModal({ job, onClose, onSave }) {
           <div className="modal-content" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
             {error && <div className="error-message">{error}</div>}
 
+            {/* RATE CARD SELECTION */}
+            <div style={{
+              background: '#e8f0fe',
+              padding: '16px',
+              borderRadius: '8px',
+              marginBottom: '24px',
+              border: '2px solid #1a73e8'
+            }}>
+              <h3 style={{ marginBottom: '12px', color: '#1a73e8', marginTop: 0 }}>Rate Card *</h3>
+              {loadingRates ? (
+                <p>Loading rates...</p>
+              ) : rates.length === 0 ? (
+                <p style={{ color: '#d32f2f' }}>No rates available. Please create a rate card first in the Rates tab.</p>
+              ) : (
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <select
+                    name="rateId"
+                    value={formData.rateId}
+                    onChange={handleChange}
+                    required
+                    style={{
+                      width: '100%',
+                      padding: '12px',
+                      fontSize: '16px',
+                      border: '2px solid #1a73e8',
+                      borderRadius: '4px'
+                    }}
+                  >
+                    <option value="">Select rate card...</option>
+                    {rates.map(rate => (
+                      <option key={rate.id} value={rate.id}>
+                        {rate.rateName} - Bill: ${rate.flaggerHours}/hr
+                        {rate.flaggerPay > 0 ? ` | Pay: $${rate.flaggerPay}/hr (PW)` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+
             <h3 style={{ marginBottom: '12px', color: '#1a73e8' }}>Basic Information</h3>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
               <div className="form-group">
@@ -169,6 +183,7 @@ function EditJobModal({ job, onClose, onSave }) {
                   name="caller"
                   value={formData.caller}
                   onChange={handleChange}
+                  placeholder="e.g., ODOT"
                 />
               </div>
 
@@ -178,6 +193,7 @@ function EditJobModal({ job, onClose, onSave }) {
                   name="billing"
                   value={formData.billing}
                   onChange={handleChange}
+                  placeholder="e.g., ODOT"
                 />
               </div>
 
@@ -187,6 +203,7 @@ function EditJobModal({ job, onClose, onSave }) {
                   name="receiver"
                   value={formData.receiver}
                   onChange={handleChange}
+                  placeholder="e.g., John Smith"
                 />
               </div>
 
@@ -196,6 +213,7 @@ function EditJobModal({ job, onClose, onSave }) {
                   name="poWoJobNum"
                   value={formData.poWoJobNum}
                   onChange={handleChange}
+                  placeholder="e.g., PO-12345"
                 />
               </div>
 
@@ -205,6 +223,7 @@ function EditJobModal({ job, onClose, onSave }) {
                   name="jobSeries"
                   value={formData.jobSeries}
                   onChange={handleChange}
+                  placeholder="e.g., Series A"
                 />
               </div>
             </div>
@@ -217,6 +236,7 @@ function EditJobModal({ job, onClose, onSave }) {
                   name="initialJobDate"
                   value={formData.initialJobDate}
                   onChange={handleChange}
+                  placeholder="MM/DD/YYYY"
                 />
               </div>
 
@@ -226,6 +246,7 @@ function EditJobModal({ job, onClose, onSave }) {
                   name="initialJobTime"
                   value={formData.initialJobTime}
                   onChange={handleChange}
+                  placeholder="e.g., 7:00 AM"
                 />
               </div>
 
@@ -235,6 +256,7 @@ function EditJobModal({ job, onClose, onSave }) {
                   name="meetSet"
                   value={formData.meetSet}
                   onChange={handleChange}
+                  placeholder="e.g., Meet at shop"
                 />
               </div>
 
@@ -244,6 +266,7 @@ function EditJobModal({ job, onClose, onSave }) {
                   name="jobLength"
                   value={formData.jobLength}
                   onChange={handleChange}
+                  placeholder="e.g., 8 hours"
                 />
               </div>
 
@@ -253,6 +276,7 @@ function EditJobModal({ job, onClose, onSave }) {
                   name="location"
                   value={formData.location}
                   onChange={handleChange}
+                  placeholder="e.g., I-5 @ Exit 100"
                 />
               </div>
 
@@ -264,6 +288,7 @@ function EditJobModal({ job, onClose, onSave }) {
                   value={formData.amountOfFlaggers}
                   onChange={handleChange}
                   min="0"
+                  placeholder="e.g., 2"
                 />
               </div>
             </div>
@@ -276,6 +301,7 @@ function EditJobModal({ job, onClose, onSave }) {
                   name="signSets"
                   value={formData.signSets}
                   onChange={handleChange}
+                  placeholder="e.g., 2"
                 />
               </div>
 
@@ -285,6 +311,7 @@ function EditJobModal({ job, onClose, onSave }) {
                   name="indvSigns"
                   value={formData.indvSigns}
                   onChange={handleChange}
+                  placeholder="e.g., 5"
                 />
               </div>
 
@@ -296,6 +323,7 @@ function EditJobModal({ job, onClose, onSave }) {
                   value={formData.cones}
                   onChange={handleChange}
                   min="0"
+                  placeholder="e.g., 50"
                 />
               </div>
 
@@ -353,6 +381,7 @@ function EditJobModal({ job, onClose, onSave }) {
                   name="travelTime"
                   value={formData.travelTime}
                   onChange={handleChange}
+                  placeholder="e.g., 1.5"
                 />
               </div>
 
@@ -364,124 +393,21 @@ function EditJobModal({ job, onClose, onSave }) {
                   value={formData.travelMiles}
                   onChange={handleChange}
                   min="0"
+                  placeholder="e.g., 50"
                 />
               </div>
             </div>
 
             <h3 style={{ marginBottom: '12px', color: '#1a73e8' }}>Notes</h3>
-            <div className="form-group" style={{ marginBottom: '24px' }}>
+            <div className="form-group">
               <textarea
                 name="otherNotes"
                 value={formData.otherNotes}
                 onChange={handleChange}
                 rows="4"
                 style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #dadce0' }}
+                placeholder="Additional notes..."
               />
-            </div>
-
-            {/* Custom Parameters */}
-            <h3 style={{ marginBottom: '12px', color: '#1a73e8' }}>Custom Parameters</h3>
-            
-            {/* Existing custom parameters */}
-            {customParams.map((param, index) => (
-              <div key={index} style={{ display: 'flex', gap: '8px', marginBottom: '8px', alignItems: 'center' }}>
-                <input
-                  value={param.key}
-                  onChange={(e) => handleCustomParamChange(index, 'key', e.target.value)}
-                  placeholder="Parameter name"
-                  style={{ flex: '1', padding: '8px', borderRadius: '4px', border: '1px solid #dadce0' }}
-                />
-                <select
-                  value={param.type}
-                  onChange={(e) => handleCustomParamChange(index, 'type', e.target.value)}
-                  style={{ padding: '8px', borderRadius: '4px', border: '1px solid #dadce0' }}
-                >
-                  <option value="string">Text</option>
-                  <option value="number">Number</option>
-                  <option value="boolean">True/False</option>
-                </select>
-                {param.type === 'boolean' ? (
-                  <select
-                    value={String(param.value)}
-                    onChange={(e) => handleCustomParamChange(index, 'value', e.target.value)}
-                    style={{ flex: '2', padding: '8px', borderRadius: '4px', border: '1px solid #dadce0' }}
-                  >
-                    <option value="true">True</option>
-                    <option value="false">False</option>
-                  </select>
-                ) : (
-                  <input
-                    type={param.type === 'number' ? 'number' : 'text'}
-                    value={param.value}
-                    onChange={(e) => handleCustomParamChange(index, 'value', e.target.value)}
-                    placeholder="Value"
-                    style={{ flex: '2', padding: '8px', borderRadius: '4px', border: '1px solid #dadce0' }}
-                  />
-                )}
-                <button
-                  type="button"
-                  onClick={() => removeCustomParam(index)}
-                  className="btn btn-secondary btn-small"
-                  style={{ color: '#d32f2f' }}
-                >
-                  Remove
-                </button>
-              </div>
-            ))}
-
-            {/* Add new parameter */}
-            <div style={{ 
-              marginTop: '16px', 
-              padding: '16px', 
-              background: '#f8f9fa', 
-              borderRadius: '4px',
-              border: '2px dashed #dadce0'
-            }}>
-              <div style={{ fontWeight: '600', marginBottom: '12px', fontSize: '14px' }}>
-                Add New Parameter
-              </div>
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                <input
-                  value={newParam.key}
-                  onChange={(e) => setNewParam({ ...newParam, key: e.target.value })}
-                  placeholder="Parameter name"
-                  style={{ flex: '1', padding: '8px', borderRadius: '4px', border: '1px solid #dadce0' }}
-                />
-                <select
-                  value={newParam.type}
-                  onChange={(e) => setNewParam({ ...newParam, type: e.target.value })}
-                  style={{ padding: '8px', borderRadius: '4px', border: '1px solid #dadce0' }}
-                >
-                  <option value="string">Text</option>
-                  <option value="number">Number</option>
-                  <option value="boolean">True/False</option>
-                </select>
-                {newParam.type === 'boolean' ? (
-                  <select
-                    value={newParam.value}
-                    onChange={(e) => setNewParam({ ...newParam, value: e.target.value })}
-                    style={{ flex: '2', padding: '8px', borderRadius: '4px', border: '1px solid #dadce0' }}
-                  >
-                    <option value="true">True</option>
-                    <option value="false">False</option>
-                  </select>
-                ) : (
-                  <input
-                    type={newParam.type === 'number' ? 'number' : 'text'}
-                    value={newParam.value}
-                    onChange={(e) => setNewParam({ ...newParam, value: e.target.value })}
-                    placeholder="Value"
-                    style={{ flex: '2', padding: '8px', borderRadius: '4px', border: '1px solid #dadce0' }}
-                  />
-                )}
-                <button
-                  type="button"
-                  onClick={addNewParam}
-                  className="btn btn-primary btn-small"
-                >
-                  Add
-                </button>
-              </div>
             </div>
           </div>
 
@@ -489,8 +415,8 @@ function EditJobModal({ job, onClose, onSave }) {
             <button type="button" onClick={onClose} className="btn btn-secondary">
               Cancel
             </button>
-            <button type="submit" className="btn btn-primary" disabled={loading}>
-              {loading ? 'Saving...' : 'Save Changes'}
+            <button type="submit" className="btn btn-primary" disabled={loading || loadingRates}>
+              {loading ? 'Updating...' : 'Update Job'}
             </button>
           </div>
         </form>
