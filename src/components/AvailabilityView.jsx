@@ -3,13 +3,13 @@ import { collection, getDocs, addDoc, deleteDoc, doc, serverTimestamp } from 'fi
 import { db, auth } from '../firebase';
 import { logAudit } from '../utils/auditLog';
 
-function AvailabilityView() {
+function AvailabilityView({ permissions }) {
   const [employees, setEmployees] = useState([]);
-  const [timeOffRecords, setTimeOffRecords] = useState([]);
-  const [lookupDate, setLookupDate] = useState('');
-  const [availability, setAvailability] = useState(null);
-  const [showAddModal, setShowAddModal] = useState(false);
+  const [timeOffRequests, setTimeOffRequests] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [selectedDate, setSelectedDate] = useState('');
+  const [availabilityResults, setAvailabilityResults] = useState(null);
+  const [showAddTimeOff, setShowAddTimeOff] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -23,29 +23,20 @@ function AvailabilityView() {
         getDocs(collection(db, 'timeOff'))
       ]);
 
-      let employeesData = employeesSnap.docs.map(doc => ({
+      const employeesData = employeesSnap.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
 
-      let timeOffData = timeOffSnap.docs.map(doc => ({
+      const timeOffData = timeOffSnap.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
 
-      // Filter active employees only
-      employeesData = employeesData.filter(emp => emp.isActive !== false);
-      employeesData.sort((a, b) => (a.fullName || '').localeCompare(b.fullName || ''));
-
-      // Sort time-off by start date
-      timeOffData.sort((a, b) => {
-        const dateA = parseDate(a.startDate);
-        const dateB = parseDate(b.startDate);
-        return dateA - dateB;
-      });
-
-      setEmployees(employeesData);
-      setTimeOffRecords(timeOffData);
+      setEmployees(employeesData.sort((a, b) => 
+        (a.fullName || '').localeCompare(b.fullName || '')
+      ));
+      setTimeOffRequests(timeOffData);
     } catch (err) {
       console.error('Error loading data:', err);
     } finally {
@@ -53,120 +44,52 @@ function AvailabilityView() {
     }
   };
 
-  const parseDate = (dateStr) => {
-  if (!dateStr) return null;
-  
-  // If YYYY-MM-DD format (from date picker)
-  if (dateStr.includes('-')) {
-    const [year, month, day] = dateStr.split('-');
-    return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-  }
-  
-  // If MM/DD/YYYY format (from Firestore)
-  if (dateStr.includes('/')) {
-    const [month, day, year] = dateStr.split('/');
-    return new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-  }
-  
-  return new Date(dateStr);
-};
-
-  const isDateInRange = (checkDate, startDate, endDate) => {
-    try {
-      const check = parseDate(checkDate);
-      const start = parseDate(startDate);
-      const end = parseDate(endDate);
-      
-      if (!check || !start || !end) return false;
-      
-      check.setHours(0, 0, 0, 0);
-      start.setHours(0, 0, 0, 0);
-      end.setHours(0, 0, 0, 0);
-
-      return check >= start && check <= end;
-    } catch (error) {
-      console.error('Date parsing error:', error);
-      return false;
-    }
-  };
-
-  const handleLookup = () => {
-  if (!lookupDate) {
-    alert('Please select a date');
-    return;
-  }
-
-  console.log('=== LOOKUP DEBUG ===');
-  console.log('Looking up date:', lookupDate);
-
-  const available = [];
-  const offAllDay = [];
-  const partialDayOff = [];
-
-  employees.forEach(emp => {
-    const timeOff = timeOffRecords.find(to => {
-      if (to.employeeName === emp.fullName) {
-        const inRange = isDateInRange(lookupDate, to.startDate, to.endDate);
-        console.log(`${emp.fullName}: checking ${lookupDate} against ${to.startDate} - ${to.endDate} = ${inRange}`);
-        return inRange;
-      }
-      return false;
-    });
-
-    if (!timeOff) {
-      available.push(emp);
-    } else if (timeOff.isPartialDay) {
-      partialDayOff.push({ ...emp, timeOff });
-    } else {
-      offAllDay.push({ ...emp, timeOff });
-    }
-  });
-
-  console.log('=== END DEBUG ===');
-
-  setAvailability({
-    date: lookupDate,
-    available,
-    offAllDay,
-    partialDayOff
-  });
-};
-
-  const handleDelete = async (timeOffId) => {
-    if (!confirm('Are you sure you want to delete this time-off record?')) {
+  const checkAvailability = () => {
+    if (!selectedDate) {
+      alert('Please select a date');
       return;
     }
 
+    const checkDate = new Date(selectedDate);
+    const available = [];
+    const unavailable = [];
+
+    employees.forEach(emp => {
+      const empTimeOff = timeOffRequests.filter(req => {
+        if (req.employeeId !== emp.id) return false;
+        const start = new Date(req.startDate);
+        const end = new Date(req.endDate);
+        return checkDate >= start && checkDate <= end;
+      });
+
+      if (empTimeOff.length > 0) {
+        unavailable.push({
+          employee: emp,
+          timeOff: empTimeOff
+        });
+      } else {
+        available.push(emp);
+      }
+    });
+
+    setAvailabilityResults({ available, unavailable, date: selectedDate });
+  };
+
+  const upcomingTimeOff = timeOffRequests.filter(t => {
+    const endDate = new Date(t.endDate);
+    return endDate >= new Date();
+  }).sort((a, b) => new Date(a.startDate) - new Date(b.startDate));
+
+  const handleDeleteTimeOff = async (timeOffId) => {
+    if (!confirm('Delete this time off entry?')) return;
+
     try {
       await deleteDoc(doc(db, 'timeOff', timeOffId));
-      await logAudit('DELETE_TIMEOFF', 'timeOff', timeOffId);
+      await logAudit('DELETE_TIME_OFF', 'timeOff', timeOffId);
       loadData();
-      if (availability) {
-        handleLookup();
-      }
     } catch (err) {
-      alert('Error deleting time-off: ' + err.message);
+      alert('Error deleting time off: ' + err.message);
     }
-  };
-
-  const getUpcomingTimeOff = () => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    return timeOffRecords
-      .filter(to => parseDate(to.startDate) >= today)
-      .slice(0, 10);
-  };
-
-  const formatDisplayDate = (dateStr) => {
-    const [year, month, day] = dateStr.split('-');
-    const date = new Date(year, parseInt(month) - 1, parseInt(day));
-    return date.toLocaleDateString('en-US', { 
-      weekday: 'long', 
-      month: 'long', 
-      day: 'numeric', 
-      year: 'numeric' 
-    });
   };
 
   if (loading) {
@@ -183,7 +106,7 @@ function AvailabilityView() {
       <div className="jobs-header">
         <h2>Employee Availability</h2>
         <div className="jobs-actions">
-          <button onClick={() => setShowAddModal(true)} className="btn btn-primary">
+          <button onClick={() => setShowAddTimeOff(true)} className="btn btn-primary">
             + Add Time Off
           </button>
           <button onClick={loadData} className="btn btn-secondary">
@@ -192,177 +115,147 @@ function AvailabilityView() {
         </div>
       </div>
 
-      <div style={{ 
-        background: 'white', 
-        padding: '24px', 
-        borderRadius: '8px', 
+      {/* Availability Lookup */}
+      <div style={{
+        background: 'white',
+        padding: '24px',
+        borderRadius: '8px',
         marginBottom: '24px',
-        border: '1px solid #e0e0e0'
+        boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
       }}>
         <h3 style={{ marginBottom: '16px', color: '#1a73e8' }}>Availability Lookup</h3>
         <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end' }}>
-          <div className="form-group" style={{ flex: '0 0 200px' }}>
-            <label>Select Date</label>
+          <div style={{ flex: 1 }}>
+            <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500' }}>
+              Select Date
+            </label>
             <input
               type="date"
-              value={lookupDate}
-              onChange={(e) => setLookupDate(e.target.value)}
-              style={{ width: '100%' }}
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '10px',
+                border: '1px solid #dadce0',
+                borderRadius: '4px',
+                fontSize: '14px'
+              }}
             />
           </div>
-          <button onClick={handleLookup} className="btn btn-primary">
+          <button 
+            onClick={checkAvailability}
+            className="btn btn-primary"
+            style={{ padding: '10px 24px' }}
+          >
             Check Availability
           </button>
         </div>
 
-        {availability && (
+        {availabilityResults && (
           <div style={{ marginTop: '24px' }}>
-            <h4 style={{ marginBottom: '16px', fontSize: '16px' }}>
-              Results for {formatDisplayDate(availability.date)}
+            <h4 style={{ marginBottom: '12px', color: '#202124' }}>
+              Results for {new Date(availabilityResults.date).toLocaleDateString()}
             </h4>
-
-            <div style={{ marginBottom: '16px' }}>
-              <div style={{ 
-                background: '#e8f5e9', 
-                padding: '12px 16px', 
-                borderRadius: '4px',
-                fontWeight: '600',
-                marginBottom: '8px',
-                cursor: 'pointer'
-              }}
-              onClick={(e) => {
-                const content = e.currentTarget.nextElementSibling;
-                content.style.display = content.style.display === 'none' ? 'block' : 'none';
-              }}
-              >
-                ✅ Available ({availability.available.length} employees) - Click to expand
+            
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              {/* Available */}
+              <div>
+                <div style={{
+                  background: '#e8f5e9',
+                  padding: '12px',
+                  borderRadius: '4px',
+                  marginBottom: '8px',
+                  fontWeight: '600',
+                  color: '#2e7d32'
+                }}>
+                  ✓ Available ({availabilityResults.available.length})
+                </div>
+                <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                  {availabilityResults.available.map(emp => (
+                    <div key={emp.id} style={{
+                      padding: '8px 12px',
+                      background: '#f8f9fa',
+                      borderRadius: '4px',
+                      marginBottom: '4px',
+                      fontSize: '14px'
+                    }}>
+                      {emp.fullName}
+                    </div>
+                  ))}
+                </div>
               </div>
-              <div style={{ display: 'none', padding: '12px', background: '#f8f9fa', borderRadius: '4px' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '8px' }}>
-                  {availability.available.map(emp => (
-                    <div key={emp.id} style={{ fontSize: '14px' }}>
-                      {emp.fullName} {emp.employeeUID && `(#${emp.employeeUID})`}
+
+              {/* Unavailable */}
+              <div>
+                <div style={{
+                  background: '#ffebee',
+                  padding: '12px',
+                  borderRadius: '4px',
+                  marginBottom: '8px',
+                  fontWeight: '600',
+                  color: '#c62828'
+                }}>
+                  ✗ Unavailable ({availabilityResults.unavailable.length})
+                </div>
+                <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                  {availabilityResults.unavailable.map(({ employee, timeOff }) => (
+                    <div key={employee.id} style={{
+                      padding: '8px 12px',
+                      background: '#f8f9fa',
+                      borderRadius: '4px',
+                      marginBottom: '4px',
+                      fontSize: '14px'
+                    }}>
+                      <div style={{ fontWeight: '500' }}>{employee.fullName}</div>
+                      <div style={{ fontSize: '12px', color: '#5f6368', marginTop: '2px' }}>
+                        {timeOff[0].reason || 'Time off'}
+                      </div>
                     </div>
                   ))}
                 </div>
               </div>
             </div>
-
-            {availability.offAllDay.length > 0 && (
-              <div style={{ marginBottom: '16px' }}>
-                <div style={{ 
-                  background: '#ffebee', 
-                  padding: '12px 16px', 
-                  borderRadius: '4px',
-                  fontWeight: '600',
-                  marginBottom: '8px'
-                }}>
-                  📅 Off All Day ({availability.offAllDay.length} employees)
-                </div>
-                <div style={{ padding: '12px', background: '#f8f9fa', borderRadius: '4px' }}>
-                  {availability.offAllDay.map(emp => (
-                    <div key={emp.id} style={{ 
-                      padding: '12px',
-                      background: 'white',
-                      borderRadius: '4px',
-                      marginBottom: '8px',
-                      border: '1px solid #e0e0e0'
-                    }}>
-                      <div style={{ fontWeight: '600', marginBottom: '4px' }}>
-                        {emp.fullName} {emp.employeeUID && `(#${emp.employeeUID})`}
-                      </div>
-                      <div style={{ fontSize: '13px', color: '#5f6368' }}>
-                        {emp.timeOff.reason} • {emp.timeOff.startDate} 
-                        {emp.timeOff.startDate !== emp.timeOff.endDate && ` - ${emp.timeOff.endDate}`}
-                      </div>
-                      {emp.timeOff.notes && (
-                        <div style={{ fontSize: '12px', color: '#5f6368', marginTop: '4px', fontStyle: 'italic' }}>
-                          "{emp.timeOff.notes}"
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {availability.partialDayOff.length > 0 && (
-              <div style={{ marginBottom: '16px' }}>
-                <div style={{ 
-                  background: '#fff3e0', 
-                  padding: '12px 16px', 
-                  borderRadius: '4px',
-                  fontWeight: '600',
-                  marginBottom: '8px'
-                }}>
-                  ⏰ Partial Day Off ({availability.partialDayOff.length} employees)
-                </div>
-                <div style={{ padding: '12px', background: '#f8f9fa', borderRadius: '4px' }}>
-                  {availability.partialDayOff.map(emp => (
-                    <div key={emp.id} style={{ 
-                      padding: '12px',
-                      background: 'white',
-                      borderRadius: '4px',
-                      marginBottom: '8px',
-                      border: '1px solid #e0e0e0'
-                    }}>
-                      <div style={{ fontWeight: '600', marginBottom: '4px' }}>
-                        {emp.fullName} {emp.employeeUID && `(#${emp.employeeUID})`}
-                      </div>
-                      <div style={{ fontSize: '13px', color: '#5f6368' }}>
-                        {emp.timeOff.reason} • {emp.timeOff.startTime} - {emp.timeOff.endTime}
-                      </div>
-                      {emp.timeOff.notes && (
-                        <div style={{ fontSize: '12px', color: '#5f6368', marginTop: '4px', fontStyle: 'italic' }}>
-                          "{emp.timeOff.notes}"
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         )}
       </div>
 
-      <div style={{ 
-        background: 'white', 
-        padding: '24px', 
-        borderRadius: '8px', 
+      {/* Upcoming Time Off */}
+      <div style={{
+        background: 'white',
+        padding: '24px',
+        borderRadius: '8px',
         marginBottom: '24px',
-        border: '1px solid #e0e0e0'
+        boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
       }}>
         <h3 style={{ marginBottom: '16px', color: '#1a73e8' }}>Upcoming Time Off</h3>
-        {getUpcomingTimeOff().length === 0 ? (
-          <p style={{ color: '#5f6368' }}>No upcoming time off scheduled</p>
+        {upcomingTimeOff.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '40px', color: '#5f6368' }}>
+            No upcoming time off scheduled
+          </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {getUpcomingTimeOff().map(to => (
-              <div key={to.id} style={{ 
+            {upcomingTimeOff.map(t => (
+              <div key={t.id} style={{
                 display: 'flex',
+                justifyContent: 'space-between',
                 alignItems: 'center',
-                padding: '12px',
+                padding: '12px 16px',
                 background: '#f8f9fa',
                 borderRadius: '4px',
                 border: '1px solid #e0e0e0'
               }}>
-                <div style={{ flex: 1 }}>
+                <div>
                   <div style={{ fontWeight: '600', marginBottom: '4px' }}>
-                    {to.employeeName} {to.employeeUID && `(#${to.employeeUID})`}
+                    {t.employeeName} {t.employeeNumber && `(#${t.employeeNumber})`}
                   </div>
-                  <div style={{ fontSize: '13px', color: '#5f6368' }}>
-                    {to.startDate} {to.startDate !== to.endDate && `- ${to.endDate}`} • {to.reason}
-                    {to.isPartialDay && ` • ${to.startTime} - ${to.endTime}`}
+                  <div style={{ fontSize: '14px', color: '#5f6368' }}>
+                    {new Date(t.startDate).toLocaleDateString()} - {new Date(t.endDate).toLocaleDateString()}
+                    {t.reason && ` • ${t.reason}`}
+                    {t.timeRange && ` • ${t.timeRange}`}
                   </div>
-                  {to.notes && (
-                    <div style={{ fontSize: '12px', color: '#5f6368', marginTop: '4px', fontStyle: 'italic' }}>
-                      "{to.notes}"
-                    </div>
-                  )}
                 </div>
                 <button
-                  onClick={() => handleDelete(to.id)}
+                  onClick={() => handleDeleteTimeOff(t.id)}
                   className="btn btn-secondary btn-small"
                   style={{ color: '#d32f2f' }}
                 >
@@ -374,66 +267,66 @@ function AvailabilityView() {
         )}
       </div>
 
-      <div style={{ 
-        background: 'white', 
-        padding: '24px', 
+      {/* All Time Off Records */}
+      <div style={{
+        background: 'white',
+        padding: '24px',
         borderRadius: '8px',
-        border: '1px solid #e0e0e0'
+        boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
       }}>
         <h3 style={{ marginBottom: '16px', color: '#1a73e8' }}>All Time Off Records</h3>
-        {timeOffRecords.length === 0 ? (
-          <p style={{ color: '#5f6368' }}>No time off records</p>
+        {timeOffRequests.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '40px', color: '#5f6368' }}>
+            No time off records
+          </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {timeOffRecords.map(to => (
-              <div key={to.id} style={{ 
-                display: 'flex',
-                alignItems: 'center',
-                padding: '12px',
-                background: '#f8f9fa',
-                borderRadius: '4px',
-                border: '1px solid #e0e0e0'
-              }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: '600', marginBottom: '4px' }}>
-                    {to.employeeName} {to.employeeUID && `(#${to.employeeUID})`}
-                  </div>
-                  <div style={{ fontSize: '13px', color: '#5f6368' }}>
-                    {to.startDate} {to.startDate !== to.endDate && `- ${to.endDate}`} • {to.reason}
-                    {to.isPartialDay && ` • ${to.startTime} - ${to.endTime}`}
-                  </div>
-                  {to.notes && (
-                    <div style={{ fontSize: '12px', color: '#5f6368', marginTop: '4px', fontStyle: 'italic' }}>
-                      "{to.notes}"
+            {timeOffRequests
+              .sort((a, b) => new Date(b.startDate) - new Date(a.startDate))
+              .map(t => {
+                const isPast = new Date(t.endDate) < new Date();
+                return (
+                  <div key={t.id} style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '12px 16px',
+                    background: isPast ? '#fafafa' : '#f8f9fa',
+                    borderRadius: '4px',
+                    border: '1px solid #e0e0e0',
+                    opacity: isPast ? 0.6 : 1
+                  }}>
+                    <div>
+                      <div style={{ fontWeight: '600', marginBottom: '4px' }}>
+                        {t.employeeName} {t.employeeNumber && `(#${t.employeeNumber})`}
+                      </div>
+                      <div style={{ fontSize: '14px', color: '#5f6368' }}>
+                        {new Date(t.startDate).toLocaleDateString()} - {new Date(t.endDate).toLocaleDateString()}
+                        {t.reason && ` • ${t.reason}`}
+                        {t.timeRange && ` • ${t.timeRange}`}
+                      </div>
                     </div>
-                  )}
-                  <div style={{ fontSize: '11px', color: '#9e9e9e', marginTop: '4px' }}>
-                    Added by {to.createdBy}
+                    <button
+                      onClick={() => handleDeleteTimeOff(t.id)}
+                      className="btn btn-secondary btn-small"
+                      style={{ color: '#d32f2f' }}
+                    >
+                      Delete
+                    </button>
                   </div>
-                </div>
-                <button
-                  onClick={() => handleDelete(to.id)}
-                  className="btn btn-secondary btn-small"
-                  style={{ color: '#d32f2f' }}
-                >
-                  Delete
-                </button>
-              </div>
-            ))}
+                );
+              })}
           </div>
         )}
       </div>
 
-      {showAddModal && (
+      {showAddTimeOff && (
         <AddTimeOffModal
           employees={employees}
-          onClose={() => setShowAddModal(false)}
+          onClose={() => setShowAddTimeOff(false)}
           onSave={() => {
-            setShowAddModal(false);
+            setShowAddTimeOff(false);
             loadData();
-            if (availability) {
-              handleLookup();
-            }
           }}
         />
       )}
@@ -442,100 +335,52 @@ function AvailabilityView() {
 }
 
 function AddTimeOffModal({ employees, onClose, onSave }) {
-  const [formData, setFormData] = useState({
-    employeeName: '',
-    employeeUID: '',
-    startDate: '',
-    endDate: '',
-    isPartialDay: false,
-    startTime: '',
-    endTime: '',
-    reason: 'Vacation',
-    customReason: '',
-    notes: '',
-    approved: true
-  });
-
+  const [employeeId, setEmployeeId] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [reason, setReason] = useState('');
+  const [timeRange, setTimeRange] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-
-  const handleEmployeeChange = (e) => {
-    const empName = e.target.value;
-    const emp = employees.find(employee => employee.fullName === empName);
-    
-    setFormData(prev => ({
-      ...prev,
-      employeeName: empName,
-      employeeUID: emp ? emp.employeeUID : ''
-    }));
-  };
-
-  const handleChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value
-    }));
-
-    if (name === 'startDate' && !formData.endDate) {
-      setFormData(prev => ({ ...prev, endDate: value }));
-    }
-  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
     setLoading(true);
 
     try {
-      if (!formData.employeeName) {
-        throw new Error('Please select an employee');
-      }
-
-      if (!formData.startDate || !formData.endDate) {
-        throw new Error('Please select start and end dates');
-      }
-
-      if (formData.isPartialDay && (!formData.startTime || !formData.endTime)) {
-        throw new Error('Please enter start and end times for partial day');
-      }
-
-      const convertDate = (dateStr) => {
-        const [year, month, day] = dateStr.split('-');
-        return `${month}/${day}/${year}`;
-      };
-
-      const finalReason = formData.reason === 'Other' ? formData.customReason : formData.reason;
-
+      const selectedEmployee = employees.find(e => e.id === employeeId);
+      
       const timeOffData = {
-        employeeName: formData.employeeName,
-        employeeUID: formData.employeeUID,
-        startDate: convertDate(formData.startDate),
-        endDate: convertDate(formData.endDate),
-        isPartialDay: formData.isPartialDay,
-        startTime: formData.isPartialDay ? formData.startTime : '',
-        endTime: formData.isPartialDay ? formData.endTime : '',
-        reason: finalReason,
-        notes: formData.notes,
-        approved: formData.approved,
+        employeeId,
+        employeeName: selectedEmployee?.fullName || 'Unknown',
+        employeeNumber: selectedEmployee?.custom?.employeeNumber || null,
+        startDate,
+        endDate,
+        reason,
+        timeRange,
         createdAt: serverTimestamp(),
         createdBy: auth.currentUser?.email || 'unknown'
       };
 
       await addDoc(collection(db, 'timeOff'), timeOffData);
-      await logAudit('ADD_TIMEOFF', 'timeOff', formData.employeeName, timeOffData);
+      await logAudit('ADD_TIME_OFF', 'timeOff', employeeId, { startDate, endDate, reason });
 
       onSave();
     } catch (err) {
-      setError(err.message);
+      alert('Error adding time off: ' + err.message);
     } finally {
       setLoading(false);
     }
   };
 
+  const handleOverlayMouseDown = (e) => {
+    if (e.target === e.currentTarget) {
+      onClose();
+    }
+  };
+
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '600px' }}>
+    <div className="modal-overlay" onMouseDown={handleOverlayMouseDown}>
+      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
         <div className="modal-header">
           <h2>Add Time Off</h2>
           <button className="modal-close" onClick={onClose}>×</button>
@@ -543,147 +388,61 @@ function AddTimeOffModal({ employees, onClose, onSave }) {
 
         <form onSubmit={handleSubmit}>
           <div className="modal-content">
-            {error && <div className="error-message">{error}</div>}
-
             <div className="form-group">
               <label>Employee *</label>
               <select
-                name="employeeName"
-                value={formData.employeeName}
-                onChange={handleEmployeeChange}
+                value={employeeId}
+                onChange={(e) => setEmployeeId(e.target.value)}
                 required
-                style={{ width: '100%' }}
               >
                 <option value="">Select employee...</option>
                 {employees.map(emp => (
-                  <option key={emp.id} value={emp.fullName}>
-                    {emp.fullName} {emp.employeeUID && `(#${emp.employeeUID})`}
+                  <option key={emp.id} value={emp.id}>
+                    {emp.fullName} {emp.custom?.employeeNumber && `(#${emp.custom.employeeNumber})`}
                   </option>
                 ))}
               </select>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-              <div className="form-group">
-                <label>Start Date *</label>
-                <input
-                  type="date"
-                  name="startDate"
-                  value={formData.startDate}
-                  onChange={handleChange}
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label>End Date *</label>
-                <input
-                  type="date"
-                  name="endDate"
-                  value={formData.endDate}
-                  onChange={handleChange}
-                  required
-                />
-              </div>
-            </div>
-
             <div className="form-group">
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  name="isPartialDay"
-                  checked={formData.isPartialDay}
-                  onChange={handleChange}
-                  style={{ width: '18px', height: '18px' }}
-                />
-                Partial Day Only
-              </label>
-            </div>
-
-            {formData.isPartialDay && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                <div className="form-group">
-                  <label>Start Time *</label>
-                  <input
-                    type="time"
-                    name="startTime"
-                    value={formData.startTime}
-                    onChange={handleChange}
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>End Time *</label>
-                  <input
-                    type="time"
-                    name="endTime"
-                    value={formData.endTime}
-                    onChange={handleChange}
-                  />
-                </div>
-              </div>
-            )}
-
-            <div className="form-group">
-              <label>Reason *</label>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {['Vacation', 'Sick', 'Personal', 'Appointment'].map(reason => (
-                  <label key={reason} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <input
-                      type="radio"
-                      name="reason"
-                      value={reason}
-                      checked={formData.reason === reason}
-                      onChange={handleChange}
-                    />
-                    {reason}
-                  </label>
-                ))}
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <input
-                    type="radio"
-                    name="reason"
-                    value="Other"
-                    checked={formData.reason === 'Other'}
-                    onChange={handleChange}
-                  />
-                  Other:
-                  <input
-                    type="text"
-                    name="customReason"
-                    value={formData.customReason}
-                    onChange={handleChange}
-                    placeholder="Specify reason"
-                    disabled={formData.reason !== 'Other'}
-                    style={{ marginLeft: '8px', flex: 1 }}
-                  />
-                </label>
-              </div>
-            </div>
-
-            <div className="form-group">
-              <label>Notes</label>
-              <textarea
-                name="notes"
-                value={formData.notes}
-                onChange={handleChange}
-                rows="3"
-                style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #dadce0' }}
-                placeholder="Additional details..."
+              <label>Start Date *</label>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                required
               />
             </div>
 
             <div className="form-group">
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  name="approved"
-                  checked={formData.approved}
-                  onChange={handleChange}
-                  style={{ width: '18px', height: '18px' }}
-                />
-                Approved
-              </label>
+              <label>End Date *</label>
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                required
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Time Range (optional)</label>
+              <input
+                type="text"
+                value={timeRange}
+                onChange={(e) => setTimeRange(e.target.value)}
+                placeholder="e.g., 12:00 - 16:45"
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Reason</label>
+              <textarea
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                rows="3"
+                placeholder="e.g., Vacation"
+                style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #dadce0' }}
+              />
             </div>
           </div>
 

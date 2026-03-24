@@ -7,6 +7,8 @@ import AssignEmployeesModal from './AssignEmployeesModal';
 import JobDetailsModal from './JobDetailsModal';
 import DispatchFlaggersModal from './DispatchFlaggersModal';
 import ContinueJobModal from './ContinueJobModal';
+import FinishJobModal from './FinishJobModal';
+import ReturnJobModal from './ReturnJobModal';
 
 function JobsList({ permissions }) {
   const [jobs, setJobs] = useState([]);
@@ -16,6 +18,8 @@ function JobsList({ permissions }) {
   const [viewingJob, setViewingJob] = useState(null);
   const [dispatchingJob, setDispatchingJob] = useState(null);
   const [continuingJob, setContinuingJob] = useState(null);
+  const [finishingJob, setFinishingJob] = useState(null);
+  const [returningJob, setReturningJob] = useState(null);
 
   const canUpdate = hasPermission(permissions, 'jobs', 'update');
 
@@ -130,6 +134,8 @@ return (
       onViewDetails={setViewingJob}
       onDispatch={setDispatchingJob}
 	  onContinue={setContinuingJob}
+	  onFinish={setFinishingJob}
+	  onReturn={setReturningJob}
     />
 
     <WeekSection
@@ -142,6 +148,8 @@ return (
       onViewDetails={setViewingJob}
       onDispatch={setDispatchingJob}
 	  onContinue={setContinuingJob}
+	  onFinish={setFinishingJob}
+	  onReturn={setReturningJob}
     />
 
     <WeekSection
@@ -154,6 +162,8 @@ return (
       onViewDetails={setViewingJob}
       onDispatch={setDispatchingJob}
 	  onContinue={setContinuingJob}
+	  onFinish={setFinishingJob}
+	  onReturn={setReturningJob}
     />
 
     <WeekSection
@@ -166,6 +176,8 @@ return (
       onViewDetails={setViewingJob}
       onDispatch={setDispatchingJob}
 	  onContinue={setContinuingJob}
+	  onFinish={setFinishingJob}
+	  onReturn={setReturningJob}
     />
 
     <WeekSection
@@ -178,6 +190,8 @@ return (
       onViewDetails={setViewingJob}
       onDispatch={setDispatchingJob}
 	  onContinue={setContinuingJob}
+	  onFinish={setFinishingJob}
+	  onReturn={setReturningJob}
     />
 
     {jobs.filter(j => !j.hideFromSummary).length === 0 && (
@@ -241,11 +255,31 @@ return (
     }}
   />
 )}
+{finishingJob && (
+  <FinishJobModal
+    job={finishingJob}
+    onClose={() => setFinishingJob(null)}
+    onSave={() => {
+      setFinishingJob(null);
+      loadJobs();
+    }}
+  />
+)}
+{returningJob && (
+  <ReturnJobModal
+    job={returningJob}
+    onClose={() => setReturningJob(null)}
+    onSave={() => {
+      setReturningJob(null);
+      loadJobs();
+    }}
+  />
+)}
   </div>
 );
 }
 
-function WeekSection({ title, jobs, color, canUpdate, onEdit, onAssign, onViewDetails, onDispatch, onContinue }) {
+function WeekSection({ title, jobs, color, canUpdate, onEdit, onAssign, onViewDetails, onDispatch, onContinue, onFinish, onReturn }) {
   if (jobs.length === 0) return null;
 
   const jobsByDate = {};
@@ -286,13 +320,15 @@ function WeekSection({ title, jobs, color, canUpdate, onEdit, onAssign, onViewDe
           onViewDetails={onViewDetails}
           onDispatch={onDispatch}
 		  onContinue={onContinue}
+		  onFinish={onFinish}
+		  onReturn={onReturn}
         />
       ))}
     </div>
   );
 }
 
-function DateGroup({ date, jobs, canUpdate, onEdit, onAssign, onViewDetails, onDispatch, onContinue }) {
+function DateGroup({ date, jobs, canUpdate, onEdit, onAssign, onViewDetails, onDispatch, onContinue, onFinish, onReturn }) {
   const formatDate = (dateStr) => {
     const date = new Date(dateStr);
     return date.toLocaleDateString('en-US', { 
@@ -331,6 +367,8 @@ function DateGroup({ date, jobs, canUpdate, onEdit, onAssign, onViewDetails, onD
             onViewDetails={onViewDetails}
             onDispatch={onDispatch}
 			onContinue={onContinue}
+			onFinish={onFinish}
+			onReturn={onReturn}
           />
         ))}
       </div>
@@ -338,7 +376,7 @@ function DateGroup({ date, jobs, canUpdate, onEdit, onAssign, onViewDetails, onD
   );
 }
 
-function JobRow({ job, canUpdate, onEdit, onAssign, onViewDetails, onDispatch, onContinue }) {
+function JobRow({ job, canUpdate, onEdit, onAssign, onViewDetails, onDispatch, onContinue, onFinish, onReturn }) {
   const [employeeData, setEmployeeData] = useState([]);
   
   useEffect(() => {
@@ -484,7 +522,27 @@ function JobRow({ job, canUpdate, onEdit, onAssign, onViewDetails, onDispatch, o
       </div>
 
       {canUpdate && (
-  <div style={{ flex: '0 0 280px', display: 'flex', gap: '4px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+  <div style={{ flex: '0 0 420px', display: 'flex', gap: '4px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+    <button 
+      onClick={(e) => {
+        e.stopPropagation();
+        onFinish(job);
+      }}
+      className="btn btn-secondary btn-small"
+      style={{ background: '#d32f2f', color: 'white' }}
+    >
+      Finish
+    </button>
+    <button 
+      onClick={(e) => {
+        e.stopPropagation();
+        onReturn(job);
+      }}
+      className="btn btn-secondary btn-small"
+      style={{ background: '#ff9800', color: 'white' }}
+    >
+      Return
+    </button>
     <button 
       onClick={(e) => {
         e.stopPropagation();

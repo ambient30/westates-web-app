@@ -114,8 +114,14 @@ function EditContractorModal({ contractor, onClose, onSave }) {
     }
   };
 
+  const handleOverlayMouseDown = (e) => {
+    if (e.target === e.currentTarget) {
+      onClose();
+    }
+  };
+
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" onMouseDown={handleOverlayMouseDown}>
       <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '700px' }}>
         <div className="modal-header">
           <h2>Edit Contractor: {contractor.caller}</h2>

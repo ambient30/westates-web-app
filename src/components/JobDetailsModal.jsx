@@ -28,9 +28,15 @@ function JobDetailsModal({ job, permissions, onClose, onUpdate }) {
   const customParams = job.custom || {};
   const hasCustomParams = Object.keys(customParams).length > 0;
 
+  const handleOverlayMouseDown = (e) => {
+    if (e.target === e.currentTarget) {
+      onClose();
+    }
+  };
+
   return (
     <>
-      <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-overlay" onMouseDown={handleOverlayMouseDown}>
         <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '900px' }}>
           <div className="modal-header">
             <h2>Job Details: {job.jobID}</h2>

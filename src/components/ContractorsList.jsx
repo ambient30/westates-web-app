@@ -12,6 +12,7 @@ function ContractorsList({ permissions }) {
   const [selectedContractor, setSelectedContractor] = useState(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingContractor, setEditingContractor] = useState(null);
+  const [expandedCompanies, setExpandedCompanies] = useState({});
 
   const canCreate = hasPermission(permissions, 'contractors', 'create');
   const canUpdate = hasPermission(permissions, 'contractors', 'update');
@@ -47,16 +48,46 @@ function ContractorsList({ permissions }) {
     }
   };
 
-  const filteredContractors = contractors.filter(con => {
+  // Group contractors by company
+  const groupedContractors = contractors.reduce((groups, contractor) => {
+    const companyName = contractor.contractor || 'No Company';
+    if (!groups[companyName]) {
+      groups[companyName] = [];
+    }
+    groups[companyName].push(contractor);
+    return groups;
+  }, {});
+
+  // Filter grouped contractors
+  const filteredGroupedContractors = Object.entries(groupedContractors).reduce((acc, [companyName, contractorList]) => {
     const search = searchTerm.toLowerCase();
-    return (
+    
+    // Filter callers within this company
+    const filteredCallers = contractorList.filter(con => 
       con.caller?.toLowerCase().includes(search) ||
       con.contractor?.toLowerCase().includes(search) ||
       con.billing?.toLowerCase().includes(search) ||
       con.phone?.toLowerCase().includes(search) ||
       con.email?.toLowerCase().includes(search)
     );
-  });
+
+    // Include company if it has matching callers OR if company name matches
+    if (filteredCallers.length > 0 || companyName.toLowerCase().includes(search)) {
+      acc[companyName] = filteredCallers.length > 0 ? filteredCallers : contractorList;
+    }
+
+    return acc;
+  }, {});
+
+  // Sort companies alphabetically
+  const sortedCompanies = Object.keys(filteredGroupedContractors).sort((a, b) => a.localeCompare(b));
+
+  const toggleCompany = (companyName) => {
+    setExpandedCompanies(prev => ({
+      ...prev,
+      [companyName]: !prev[companyName]
+    }));
+  };
 
   if (loading) {
     return (
@@ -90,7 +121,7 @@ function ContractorsList({ permissions }) {
         </div>
       </div>
 
-      {filteredContractors.length === 0 ? (
+      {sortedCompanies.length === 0 ? (
         <div className="empty-state">
           <h3>No contractors found</h3>
           <p>
@@ -100,14 +131,64 @@ function ContractorsList({ permissions }) {
           </p>
         </div>
       ) : (
-        <div className="compact-grid">
-          {filteredContractors.map(contractor => (
-            <ContractorCard 
-              key={contractor.id} 
-              contractor={contractor}
-              onClick={() => setSelectedContractor(contractor)}
-            />
-          ))}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {sortedCompanies.map(companyName => {
+            const callers = filteredGroupedContractors[companyName];
+            const isExpanded = expandedCompanies[companyName];
+
+            return (
+              <div key={companyName} style={{
+                background: 'white',
+                borderRadius: '6px',
+                boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
+                overflow: 'hidden'
+              }}>
+                {/* Company Header - COMPACT */}
+                <div
+                  onClick={() => toggleCompany(companyName)}
+                  style={{
+                    padding: '10px 16px',
+                    background: isExpanded ? '#e8f0fe' : 'white',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    borderBottom: isExpanded ? '1px solid #dadce0' : 'none',
+                    transition: 'background 0.2s'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span style={{ fontSize: '14px', color: '#5f6368' }}>
+                      {isExpanded ? '▼' : '▶'}
+                    </span>
+                    <div>
+                      <span style={{ fontWeight: '600', fontSize: '14px', color: '#202124' }}>
+                        {companyName}
+                      </span>
+                      <span style={{ fontSize: '13px', color: '#5f6368', marginLeft: '8px' }}>
+                        ({callers.length})
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Callers List (Nested) */}
+                {isExpanded && (
+                  <div style={{ padding: '12px' }}>
+                    <div className="compact-grid">
+                      {callers.map(contractor => (
+                        <ContractorCard 
+                          key={contractor.id} 
+                          contractor={contractor}
+                          onClick={() => setSelectedContractor(contractor)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -192,8 +273,14 @@ function ContractorDetailsModal({ contractor, onClose, onEdit, canUpdate, canDel
   const customParams = contractor.custom || {};
   const hasCustomParams = Object.keys(customParams).length > 0;
 
+  const handleOverlayMouseDown = (e) => {
+    if (e.target === e.currentTarget) {
+      onClose();
+    }
+  };
+
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" onMouseDown={handleOverlayMouseDown}>
       <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '600px' }}>
         <div className="modal-header">
           <h2>{contractor.caller || 'Contractor Details'}</h2>

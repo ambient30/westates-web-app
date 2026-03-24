@@ -204,8 +204,14 @@ function EmployeeDetailsModal({ employee, onClose, onEdit, canUpdate, canDelete,
   const customParams = employee.custom || {};
   const hasCustomParams = Object.keys(customParams).length > 0;
 
+  const handleOverlayMouseDown = (e) => {
+    if (e.target === e.currentTarget) {
+      onClose();
+    }
+  };
+
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" onMouseDown={handleOverlayMouseDown}>
       <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '800px' }}>
         <div className="modal-header">
           <h2>{employee.fullName || 'Employee Details'}</h2>

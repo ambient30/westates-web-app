@@ -7,7 +7,7 @@ import { logAudit } from '../utils/auditLog';
 function RoleManager({ permissions }) {
   const [roles, setRoles] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [creatingRole, setCreatingRole] = useState(false);
   const [editingRole, setEditingRole] = useState(null);
 
   const canCreate = hasPermission(permissions, 'roles', 'create');
@@ -40,12 +40,15 @@ function RoleManager({ permissions }) {
   return (
     <div>
       <div className="jobs-header">
-        <h2>Role Management</h2>
-        {canCreate && (
-          <button onClick={() => setShowCreateModal(true)} className="btn btn-primary">
-            + Create Role
+        <h2>Roles</h2>
+        <div className="jobs-actions">
+          <button onClick={() => setCreatingRole(true)} className="btn btn-primary">
+            + Add Role
           </button>
-        )}
+          <button onClick={loadRoles} className="btn btn-secondary">
+            Refresh
+          </button>
+        </div>
       </div>
 
       <div className="jobs-grid">
@@ -59,10 +62,14 @@ function RoleManager({ permissions }) {
         ))}
       </div>
 
-      {showCreateModal && (
+      {creatingRole && (
         <RoleModal
-          onClose={() => setShowCreateModal(false)}
-          onSave={loadRoles}
+          role={null}
+          onClose={() => setCreatingRole(false)}
+          onSave={() => {
+            setCreatingRole(false);
+            loadRoles();
+          }}
         />
       )}
 
@@ -70,7 +77,10 @@ function RoleManager({ permissions }) {
         <RoleModal
           role={editingRole}
           onClose={() => setEditingRole(null)}
-          onSave={loadRoles}
+          onSave={() => {
+            setEditingRole(null);
+            loadRoles();
+          }}
         />
       )}
     </div>
@@ -186,11 +196,17 @@ function RoleModal({ role, onClose, onSave }) {
     }));
   };
 
+  const handleOverlayMouseDown = (e) => {
+    if (e.target === e.currentTarget) {
+      onClose();
+    }
+  };
+
   const collections = ['jobs', 'employees', 'contractors', 'rates', 'users', 'roles'];
   const actions = ['create', 'read', 'update', 'delete'];
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" onMouseDown={handleOverlayMouseDown}>
       <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '800px' }}>
         <div className="modal-header">
           <h2>{role ? 'Edit Role' : 'Create New Role'}</h2>

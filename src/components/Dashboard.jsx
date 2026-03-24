@@ -8,6 +8,10 @@ import ContractorsList from './ContractorsList';
 import RoleManager from './RoleManager';
 import UserManager from './UserManager';
 import AvailabilityView from './AvailabilityView';
+import PinksView from './PinksView';
+import RatesManager from './RatesManager';
+
+
 
 function Dashboard({ user, permissions }) {
   const [activeTab, setActiveTab] = useState('jobs');
@@ -89,6 +93,22 @@ function Dashboard({ user, permissions }) {
       Roles
     </button>
   )}
+  {hasPermission(permissions, 'roles', 'read') && (
+  <button
+  className={activeTab === 'pinks' ? 'tab-active' : ''}
+  onClick={() => setActiveTab('pinks')}
+>
+  Pinks
+</button>
+)}
+{hasPermission(permissions, 'rates', 'read') && (
+  <button
+    className={activeTab === 'rates' ? 'tab-active' : ''}
+    onClick={() => setActiveTab('rates')}
+  >
+    Rates
+  </button>
+)}
 </div>
       </nav>
 
@@ -111,6 +131,12 @@ function Dashboard({ user, permissions }) {
   {activeTab === 'roles' && hasPermission(permissions, 'roles', 'read') && (
     <RoleManager />
   )}
+  {activeTab === 'pinks' && (
+  <PinksView permissions={permissions} />
+	)}
+	{activeTab === 'rates' && hasPermission(permissions, 'rates', 'read') && (
+  <RatesManager permissions={permissions} />
+)}
 </main>
     </div>
   );

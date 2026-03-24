@@ -55,8 +55,14 @@ function DispatchFlaggersModal({ job, onClose, onSave }) {
     setSelectedFlaggers([]);
   };
 
+  const handleOverlayMouseDown = (e) => {
+    if (e.target === e.currentTarget) {
+      onClose();
+    }
+  };
+
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" onMouseDown={handleOverlayMouseDown}>
       <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
         <div className="modal-header">
           <h2>Dispatch Flaggers: {job.jobID}</h2>

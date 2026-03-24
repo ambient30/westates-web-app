@@ -19,30 +19,30 @@ function UserManager({ permissions }) {
   }, []);
 
   const loadData = async () => {
-  try {
-    const [usersSnap, rolesSnap] = await Promise.all([
-      getDocs(collection(db, 'users')),
-      getDocs(collection(db, 'roles'))
-    ]);
+    try {
+      const [usersSnap, rolesSnap] = await Promise.all([
+        getDocs(collection(db, 'users')),
+        getDocs(collection(db, 'roles'))
+      ]);
 
-    const usersData = usersSnap.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
+      const usersData = usersSnap.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
 
-    const rolesData = rolesSnap.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
+      const rolesData = rolesSnap.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
 
-    setUsers(usersData);
-    setRoles(rolesData);
-  } catch (error) {
-    console.error('Error loading data:', error);
-  } finally {
-    setLoading(false);
-  }
-};
+      setUsers(usersData);
+      setRoles(rolesData);
+    } catch (error) {
+      console.error('Error loading data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const getRoleName = (roleId) => {
     const role = roles.find(r => r.id === roleId);
@@ -56,12 +56,15 @@ function UserManager({ permissions }) {
   return (
     <div>
       <div className="jobs-header">
-        <h2>User Management</h2>
-        {canCreate && (
+        <h2>Users</h2>
+        <div className="jobs-actions">
           <button onClick={() => setShowInviteModal(true)} className="btn btn-primary">
             + Add User
           </button>
-        )}
+          <button onClick={loadData} className="btn btn-secondary">
+            Refresh
+          </button>
+        </div>
       </div>
 
       <div className="jobs-grid">
@@ -228,8 +231,14 @@ function InviteUserModal({ roles, onClose, onSave }) {
     }
   };
 
+  const handleOverlayMouseDown = (e) => {
+    if (e.target === e.currentTarget) {
+      onClose();
+    }
+  };
+
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" onMouseDown={handleOverlayMouseDown}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h2>Add User</h2>
