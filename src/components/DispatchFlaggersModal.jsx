@@ -4,55 +4,57 @@ import { db, auth } from '../firebase';
 import { logAudit } from '../utils/auditLog';
 
 function DispatchFlaggersModal({ job, onClose, onSave }) {
-  const assignedFlaggers = job.assignedFlaggers 
-    ? job.assignedFlaggers.split(',').map(name => name.trim()).filter(Boolean)
-    : [];
+  const assignedFlaggers = (job.assignedFlaggers || '').split(',').map(f => f.trim()).filter(Boolean);
   
-  const dispatchedFlaggers = job.dispatchedFlaggers 
-    ? job.dispatchedFlaggers.split(',').map(name => name.trim()).filter(Boolean)
-    : [];
+  const [selectedFlaggers, setSelectedFlaggers] = useState(
+    assignedFlaggers.reduce((acc, flagger) => {
+      acc[flagger] = true;
+      return acc;
+    }, {})
+  );
 
-  const [selectedFlaggers, setSelectedFlaggers] = useState(dispatchedFlaggers);
-  const [saving, setSaving] = useState(false);
+  const [equipmentCarrier, setEquipmentCarrier] = useState(job.equipmentCarrier || '');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  const toggleFlagger = (flaggerName) => {
-    if (selectedFlaggers.includes(flaggerName)) {
-      setSelectedFlaggers(prev => prev.filter(name => name !== flaggerName));
-    } else {
-      setSelectedFlaggers(prev => [...prev, flaggerName]);
-    }
+  const handleFlaggerToggle = (flagger) => {
+    setSelectedFlaggers(prev => ({
+      ...prev,
+      [flagger]: !prev[flagger]
+    }));
   };
 
-  const handleSave = async () => {
-    setSaving(true);
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+
     try {
-      const dispatchedNames = selectedFlaggers.join(', ');
-      
+      const dispatched = Object.entries(selectedFlaggers)
+        .filter(([_, isSelected]) => isSelected)
+        .map(([flagger]) => flagger)
+        .join(', ');
+
+      if (!dispatched) {
+        throw new Error('Please select at least one flagger to dispatch');
+      }
+
       await updateDoc(doc(db, 'jobs', job.id), {
-        dispatchedFlaggers: dispatchedNames,
+        dispatchedFlaggers: dispatched,
+        equipmentCarrier: equipmentCarrier.trim(),
         updatedAt: serverTimestamp(),
         updatedBy: auth.currentUser?.email || 'unknown'
       });
 
-      await logAudit('DISPATCH_FLAGGERS', 'jobs', job.jobID, { 
-        dispatchedFlaggers: dispatchedNames 
-      });
+      await logAudit('DISPATCH_FLAGGERS', 'jobs', job.jobID);
 
       onSave();
       onClose();
     } catch (err) {
-      alert('Error dispatching flaggers: ' + err.message);
+      setError(err.message);
     } finally {
-      setSaving(false);
+      setLoading(false);
     }
-  };
-
-  const handleDispatchAll = () => {
-    setSelectedFlaggers(assignedFlaggers);
-  };
-
-  const handleClearAll = () => {
-    setSelectedFlaggers([]);
   };
 
   const handleOverlayMouseDown = (e) => {
@@ -63,116 +65,77 @@ function DispatchFlaggersModal({ job, onClose, onSave }) {
 
   return (
     <div className="modal-overlay" onMouseDown={handleOverlayMouseDown}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h2>Dispatch Flaggers: {job.jobID}</h2>
           <button className="modal-close" onClick={onClose}>×</button>
         </div>
 
-        <div className="modal-content">
-          {/* Job Info */}
-          <div style={{ 
-            background: '#f8f9fa', 
-            padding: '12px', 
-            borderRadius: '4px',
-            marginBottom: '16px',
-            fontSize: '14px'
-          }}>
-            <strong>{job.caller}</strong> • {job.location}<br />
-            {job.initialJobDate} • {job.initialJobTime}
-          </div>
+        <form onSubmit={handleSubmit}>
+          <div className="modal-content">
+            {error && <div className="error-message">{error}</div>}
 
-          <p style={{ fontSize: '14px', color: '#5f6368', marginBottom: '16px' }}>
-            Select flaggers who have been dispatched/confirmed for this job. Dispatched flaggers will show in <strong>black</strong>, undispatched in <strong style={{ color: '#d32f2f' }}>red</strong>.
-          </p>
-
-          {assignedFlaggers.length === 0 ? (
-            <div style={{ 
-              textAlign: 'center', 
-              padding: '40px', 
-              color: '#5f6368',
-              background: '#f8f9fa',
-              borderRadius: '4px'
-            }}>
-              No flaggers assigned to this job
-            </div>
-          ) : (
-            <>
+            <div className="form-group">
+              <label>Select Flaggers to Dispatch</label>
               <div style={{ 
                 display: 'flex', 
-                gap: '8px', 
-                marginBottom: '16px',
-                flexWrap: 'wrap'
+                flexDirection: 'column', 
+                gap: '8px',
+                padding: '12px',
+                background: '#f8f9fa',
+                borderRadius: '4px'
               }}>
-                <button
-                  onClick={handleDispatchAll}
-                  className="btn btn-secondary btn-small"
-                >
-                  Select All
-                </button>
-                <button
-                  onClick={handleClearAll}
-                  className="btn btn-secondary btn-small"
-                >
-                  Clear All
-                </button>
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {assignedFlaggers.map((flagger, idx) => {
-                  const isDispatched = selectedFlaggers.includes(flagger);
-                  return (
-                    <label
-                      key={idx}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        padding: '12px',
-                        background: isDispatched ? '#e8f5e9' : '#ffebee',
-                        border: `2px solid ${isDispatched ? '#43a047' : '#d32f2f'}`,
-                        borderRadius: '8px',
-                        cursor: 'pointer',
-                        transition: 'all 0.2s'
-                      }}
-                    >
+                {assignedFlaggers.length === 0 ? (
+                  <p style={{ color: '#5f6368', margin: 0 }}>No flaggers assigned to this job</p>
+                ) : (
+                  assignedFlaggers.map(flagger => (
+                    <label key={flagger} style={{ 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      gap: '8px',
+                      cursor: 'pointer',
+                      padding: '8px',
+                      background: selectedFlaggers[flagger] ? '#e8f0fe' : 'white',
+                      borderRadius: '4px',
+                      border: '1px solid #dadce0'
+                    }}>
                       <input
                         type="checkbox"
-                        checked={isDispatched}
-                        onChange={() => toggleFlagger(flagger)}
-                        style={{ 
-                          marginRight: '12px',
-                          width: '18px',
-                          height: '18px',
-                          cursor: 'pointer'
-                        }}
+                        checked={selectedFlaggers[flagger] || false}
+                        onChange={() => handleFlaggerToggle(flagger)}
                       />
-                      <div style={{ flex: 1 }}>
-                        <div style={{ 
-                          fontWeight: '500',
-                          color: isDispatched ? '#43a047' : '#d32f2f'
-                        }}>
-                          {flagger}
-                        </div>
-                        <div style={{ fontSize: '12px', color: '#5f6368', marginTop: '2px' }}>
-                          {isDispatched ? '✅ Dispatched' : '⏳ Not dispatched'}
-                        </div>
-                      </div>
+                      <span style={{ fontWeight: selectedFlaggers[flagger] ? '600' : '400' }}>
+                        {flagger}
+                      </span>
                     </label>
-                  );
-                })}
+                  ))
+                )}
               </div>
-            </>
-          )}
-        </div>
+            </div>
 
-        <div className="modal-actions">
-          <button onClick={onClose} className="btn btn-secondary">
-            Cancel
-          </button>
-          <button onClick={handleSave} className="btn btn-primary" disabled={saving}>
-            {saving ? 'Saving...' : `Dispatch ${selectedFlaggers.length} Flagger${selectedFlaggers.length !== 1 ? 's' : ''}`}
-          </button>
-        </div>
+            <div className="form-group">
+              <label>Equipment Carrier (Optional)</label>
+              <input
+                type="text"
+                value={equipmentCarrier}
+                onChange={(e) => setEquipmentCarrier(e.target.value)}
+                placeholder="Enter flagger name carrying equipment"
+              />
+              <small style={{ color: '#5f6368', fontSize: '12px' }}>
+                Which flagger is carrying equipment for this job? Sign stipends will be tracked during time entry.
+              </small>
+            </div>
+          </div>
+
+          <div className="modal-actions">
+            <button type="button" onClick={onClose} className="btn btn-secondary">
+              Cancel
+            </button>
+            <button type="submit" className="btn btn-primary" disabled={loading}>
+              {loading ? 'Dispatching...' : 'Dispatch Flaggers'}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );

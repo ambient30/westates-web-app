@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, addDoc, getDocs, serverTimestamp } from 'firebase/firestore';
+import { collection, getDocs, doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { logAudit } from '../utils/auditLog';
 
@@ -26,7 +26,6 @@ function CreateJobModal({ onClose, onSave }) {
     travelTime: '',
     travelMiles: '',
     otherNotes: '',
-    jobSeries: '',
     rateId: ''
   });
 
@@ -97,69 +96,71 @@ function CreateJobModal({ onClose, onSave }) {
   };
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
+  e.preventDefault();
+  setError('');
+  setLoading(true);
 
-    try {
-      if (!formData.rateId) {
-        throw new Error('Please select a rate card');
-      }
-
-      const jobID = await generateJobID();
-      
-      const selectedRate = rates.find(r => r.id === formData.rateId);
-      const rateName = selectedRate?.rateName || '';
-
-      const jobData = {
-        jobID,
-        caller: formData.caller.trim(),
-        billing: formData.billing.trim(),
-        receiver: formData.receiver.trim(),
-        poWoJobNum: formData.poWoJobNum.trim(),
-        initialJobDate: formData.initialJobDate.trim(),
-        initialJobTime: formData.initialJobTime.trim(),
-        meetSet: formData.meetSet.trim(),
-        jobLength: formData.jobLength.trim(),
-        location: formData.location.trim(),
-        amountOfFlaggers: formData.amountOfFlaggers.trim(),
-        assignedFlaggers: '',
-        dispatchedFlaggers: '',
-        equipmentCarrier: '',
-        signSets: formData.signSets.trim(),
-        indvSigns: formData.indvSigns.trim(),
-        cones: formData.cones.trim(),
-        type2: formData.type2.trim(),
-        type3: formData.type3.trim(),
-        truck: formData.truck.trim(),
-        balloonLights: formData.balloonLights.trim(),
-        portableLights: formData.portableLights.trim(),
-        travelTime: formData.travelTime.trim(),
-        travelMiles: formData.travelMiles.trim(),
-        otherNotes: formData.otherNotes.trim(),
-        jobSeries: formData.jobSeries.trim(),
-        rateId: formData.rateId,
-        rateName: rateName,
-        hideFromSummary: false,
-        custom: {},
-        
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-        createdBy: auth.currentUser?.email || 'unknown',
-        updatedBy: auth.currentUser?.email || 'unknown'
-      };
-
-      await addDoc(collection(db, 'jobs'), jobData);
-      await logAudit('CREATE_JOB', 'jobs', jobID);
-
-      onSave();
-      onClose();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
+  try {
+    if (!formData.rateId) {
+      throw new Error('Please select a rate card');
     }
-  };
+
+    const jobID = await generateJobID();
+    
+    // Get selected rate info
+    const selectedRate = rates.find(r => r.id === formData.rateId);
+    const rateName = selectedRate?.rateName || '';
+
+    const jobData = {
+      jobID,
+      caller: formData.caller.trim(),
+      billing: formData.billing.trim(),
+      receiver: formData.receiver.trim(),
+      poWoJobNum: formData.poWoJobNum.trim(),
+      initialJobDate: formData.initialJobDate.trim(),
+      initialJobTime: formData.initialJobTime.trim(),
+      meetSet: formData.meetSet.trim(),
+      jobLength: formData.jobLength.trim(),
+      location: formData.location.trim(),
+      amountOfFlaggers: formData.amountOfFlaggers.trim(),
+      assignedFlaggers: '',
+      dispatchedFlaggers: '',
+      equipmentCarrier: '',
+      signSets: formData.signSets.trim(),
+      indvSigns: formData.indvSigns.trim(),
+      cones: formData.cones.trim(),
+      type2: formData.type2.trim(),
+      type3: formData.type3.trim(),
+      truck: formData.truck.trim(),
+      balloonLights: formData.balloonLights.trim(),
+      portableLights: formData.portableLights.trim(),
+      travelTime: formData.travelTime.trim(),
+      travelMiles: formData.travelMiles.trim(),
+      otherNotes: formData.otherNotes.trim(),
+      jobSeries: jobID, // Auto-generate as jobID initially
+      rateId: formData.rateId,
+      rateName: rateName,
+      hideFromSummary: false,
+      custom: {},
+      
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      createdBy: auth.currentUser?.email || 'unknown',
+      updatedBy: auth.currentUser?.email || 'unknown'
+    };
+
+    // CHANGED: Use setDoc with jobID as document ID instead of addDoc
+    await setDoc(doc(db, 'jobs', jobID), jobData);
+    await logAudit('CREATE_JOB', 'jobs', jobID);
+
+    onSave();
+    onClose();
+  } catch (err) {
+    setError(err.message);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleOverlayMouseDown = (e) => {
     if (e.target === e.currentTarget) {
@@ -227,57 +228,47 @@ function CreateJobModal({ onClose, onSave }) {
             </div>
 
             <h3 style={{ marginBottom: '12px', color: '#1a73e8' }}>Basic Information</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
-              <div className="form-group">
-                <label>Caller</label>
-                <input
-                  name="caller"
-                  value={formData.caller}
-                  onChange={handleChange}
-                  placeholder="e.g., ODOT"
-                />
-              </div>
+<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
+  <div className="form-group">
+    <label>Caller</label>
+    <input
+      name="caller"
+      value={formData.caller}
+      onChange={handleChange}
+      placeholder="e.g., ODOT"
+    />
+  </div>
 
-              <div className="form-group">
-                <label>Billing</label>
-                <input
-                  name="billing"
-                  value={formData.billing}
-                  onChange={handleChange}
-                  placeholder="e.g., ODOT"
-                />
-              </div>
+  <div className="form-group">
+    <label>Billing</label>
+    <input
+      name="billing"
+      value={formData.billing}
+      onChange={handleChange}
+      placeholder="e.g., ODOT"
+    />
+  </div>
 
-              <div className="form-group">
-                <label>Receiver</label>
-                <input
-                  name="receiver"
-                  value={formData.receiver}
-                  onChange={handleChange}
-                  placeholder="e.g., John Smith"
-                />
-              </div>
+  <div className="form-group">
+    <label>Receiver</label>
+    <input
+      name="receiver"
+      value={formData.receiver}
+      onChange={handleChange}
+      placeholder="e.g., John Smith"
+    />
+  </div>
 
-              <div className="form-group">
-                <label>PO/WO/Job #</label>
-                <input
-                  name="poWoJobNum"
-                  value={formData.poWoJobNum}
-                  onChange={handleChange}
-                  placeholder="e.g., PO-12345"
-                />
-              </div>
-
-              <div className="form-group">
-                <label>Job Series</label>
-                <input
-                  name="jobSeries"
-                  value={formData.jobSeries}
-                  onChange={handleChange}
-                  placeholder="e.g., Series A"
-                />
-              </div>
-            </div>
+  <div className="form-group">
+    <label>PO/WO/Job #</label>
+    <input
+      name="poWoJobNum"
+      value={formData.poWoJobNum}
+      onChange={handleChange}
+      placeholder="e.g., PO-12345"
+    />
+  </div>
+</div>
 
             <h3 style={{ marginBottom: '12px', color: '#1a73e8' }}>Job Details</h3>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
