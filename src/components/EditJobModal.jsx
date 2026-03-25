@@ -3,13 +3,37 @@ import { collection, updateDoc, doc, getDocs, serverTimestamp } from 'firebase/f
 import { db, auth } from '../firebase';
 import { logAudit } from '../utils/auditLog';
 
+function generateTimeOptions() {
+  const times = [];
+  for (let hour = 0; hour < 24; hour++) {
+    for (let minute = 0; minute < 60; minute += 15) {
+      const h12 = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+      const ampm = hour < 12 ? 'AM' : 'PM';
+      const minuteStr = minute.toString().padStart(2, '0');
+      times.push(`${h12}:${minuteStr} ${ampm}`);
+    }
+  }
+  return times;
+}
+
 function EditJobModal({ job, onClose, onSave }) {
-  const [formData, setFormData] = useState({
+	  const convertToDatePickerFormat = (dateStr) => {
+    if (!dateStr) return '';
+    if (dateStr.includes('-')) return dateStr; // Already in correct format
+    
+    // Convert MM/DD/YYYY to YYYY-MM-DD
+    const [month, day, year] = dateStr.split('/');
+    if (month && day && year) {
+      return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+    }
+    return '';
+  };
+const [formData, setFormData] = useState({
     caller: job.caller || '',
     billing: job.billing || '',
     receiver: job.receiver || '',
     poWoJobNum: job.poWoJobNum || '',
-    initialJobDate: job.initialJobDate || '',
+    initialJobDate: convertToDatePickerFormat(job.initialJobDate) || '',
     initialJobTime: job.initialJobTime || '',
     meetSet: job.meetSet || '',
     jobLength: job.jobLength || '',
@@ -26,7 +50,6 @@ function EditJobModal({ job, onClose, onSave }) {
     travelTime: job.travelTime || '',
     travelMiles: job.travelMiles || '',
     otherNotes: job.otherNotes || '',
-    jobSeries: job.jobSeries || '',
     rateId: job.rateId || ''
   });
 
@@ -63,59 +86,65 @@ function EditJobModal({ job, onClose, onSave }) {
   };
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
+  e.preventDefault();
+  setError('');
+  setLoading(true);
 
-    try {
-      if (!formData.rateId) {
-        throw new Error('Please select a rate card');
-      }
-
-      const selectedRate = rates.find(r => r.id === formData.rateId);
-      const rateName = selectedRate?.rateName || '';
-
-      const jobData = {
-        caller: formData.caller.trim(),
-        billing: formData.billing.trim(),
-        receiver: formData.receiver.trim(),
-        poWoJobNum: formData.poWoJobNum.trim(),
-        initialJobDate: formData.initialJobDate.trim(),
-        initialJobTime: formData.initialJobTime.trim(),
-        meetSet: formData.meetSet.trim(),
-        jobLength: formData.jobLength.trim(),
-        location: formData.location.trim(),
-        amountOfFlaggers: formData.amountOfFlaggers.trim(),
-        signSets: formData.signSets.trim(),
-        indvSigns: formData.indvSigns.trim(),
-        cones: formData.cones.trim(),
-        type2: formData.type2.trim(),
-        type3: formData.type3.trim(),
-        truck: formData.truck.trim(),
-        balloonLights: formData.balloonLights.trim(),
-        portableLights: formData.portableLights.trim(),
-        travelTime: formData.travelTime.trim(),
-        travelMiles: formData.travelMiles.trim(),
-        otherNotes: formData.otherNotes.trim(),
-        jobSeries: formData.jobSeries.trim(),
-        rateId: formData.rateId,
-        rateName: rateName,
-        
-        updatedAt: serverTimestamp(),
-        updatedBy: auth.currentUser?.email || 'unknown'
-      };
-
-      await updateDoc(doc(db, 'jobs', job.id), jobData);
-      await logAudit('UPDATE_JOB', 'jobs', job.jobID);
-
-      onSave();
-      onClose();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
+  try {
+    if (!formData.rateId) {
+      throw new Error('Please select a rate card');
     }
-  };
+
+    const selectedRate = rates.find(r => r.id === formData.rateId);
+    const rateName = selectedRate?.rateName || '';
+
+    // Convert date from YYYY-MM-DD to MM/DD/YYYY
+    let formattedDate = formData.initialJobDate.trim();
+    if (formattedDate && formattedDate.includes('-')) {
+      const [year, month, day] = formattedDate.split('-');
+      formattedDate = `${month}/${day}/${year}`;
+    }
+
+    const jobData = {
+      caller: formData.caller.trim(),
+      billing: formData.billing.trim(),
+      receiver: formData.receiver.trim(),
+      poWoJobNum: formData.poWoJobNum.trim(),
+      initialJobDate: formattedDate,
+      initialJobTime: formData.initialJobTime.trim(),
+      meetSet: formData.meetSet.trim(),
+      jobLength: formData.jobLength.trim(),
+      location: formData.location.trim(),
+      amountOfFlaggers: formData.amountOfFlaggers.trim(),
+      signSets: formData.signSets.trim(),
+      indvSigns: formData.indvSigns.trim(),
+      cones: formData.cones.trim(),
+      type2: formData.type2.trim(),
+      type3: formData.type3.trim(),
+      truck: formData.truck.trim(),
+      balloonLights: formData.balloonLights.trim(),
+      portableLights: formData.portableLights.trim(),
+      travelTime: formData.travelTime.trim(),
+      travelMiles: formData.travelMiles.trim(),
+      otherNotes: formData.otherNotes.trim(),
+      rateId: formData.rateId,
+      rateName: rateName,
+      
+      updatedAt: serverTimestamp(),
+      updatedBy: auth.currentUser?.email || 'unknown'
+    };
+
+    await updateDoc(doc(db, 'jobs', job.id), jobData);
+    await logAudit('UPDATE_JOB', 'jobs', job.jobID);
+
+    onSave();
+    onClose();
+  } catch (err) {
+    setError(err.message);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleOverlayMouseDown = (e) => {
     if (e.target === e.currentTarget) {
@@ -229,69 +258,87 @@ function EditJobModal({ job, onClose, onSave }) {
             </div>
 
             <h3 style={{ marginBottom: '12px', color: '#1a73e8' }}>Job Details</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
-              <div className="form-group">
-                <label>Date</label>
-                <input
-                  name="initialJobDate"
-                  value={formData.initialJobDate}
-                  onChange={handleChange}
-                  placeholder="MM/DD/YYYY"
-                />
-              </div>
+  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
+    <div className="form-group">
+      <label>Date</label>
+      <input
+        type="date"
+        name="initialJobDate"
+        value={formData.initialJobDate}
+        onChange={handleChange}
+        style={{
+          width: '100%',
+          padding: '8px',
+          border: '1px solid #dadce0',
+          borderRadius: '4px',
+          fontSize: '14px'
+        }}
+      />
+    </div>
 
-              <div className="form-group">
-                <label>Time</label>
-                <input
-                  name="initialJobTime"
-                  value={formData.initialJobTime}
-                  onChange={handleChange}
-                  placeholder="e.g., 7:00 AM"
-                />
-              </div>
+    <div className="form-group">
+      <label>Time</label>
+      <select
+        name="initialJobTime"
+        value={formData.initialJobTime}
+        onChange={handleChange}
+        style={{
+          width: '100%',
+          padding: '8px',
+          border: '1px solid #dadce0',
+          borderRadius: '4px',
+          fontSize: '14px'
+        }}
+      >
+        <option value="">Select time...</option>
+        {generateTimeOptions().map(time => (
+          <option key={time} value={time}>{time}</option>
+        ))}
+      </select>
+    </div>
 
-              <div className="form-group">
-                <label>Meet/Set</label>
-                <input
-                  name="meetSet"
-                  value={formData.meetSet}
-                  onChange={handleChange}
-                  placeholder="e.g., Meet at shop"
-                />
-              </div>
+    <div className="form-group">
+      <label>Meet/Set</label>
+      <input
+        name="meetSet"
+        value={formData.meetSet}
+        onChange={handleChange}
+        placeholder="e.g., Meet at shop"
+      />
+    </div>
 
-              <div className="form-group">
-                <label>Job Length</label>
-                <input
-                  name="jobLength"
-                  value={formData.jobLength}
-                  onChange={handleChange}
-                  placeholder="e.g., 8 hours"
-                />
-              </div>
+    <div className="form-group">
+      <label>Job Length</label>
+      <input
+        name="jobLength"
+        value={formData.jobLength}
+        onChange={handleChange}
+        placeholder="e.g., 8 hours"
+      />
+    </div>
 
-              <div className="form-group" style={{ gridColumn: '1 / -1' }}>
-                <label>Location</label>
-                <input
-                  name="location"
-                  value={formData.location}
-                  onChange={handleChange}
-                  placeholder="e.g., I-5 @ Exit 100"
-                />
-              </div>
+    <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+      <label>Location</label>
+      <input
+        name="location"
+        value={formData.location}
+        onChange={handleChange}
+        placeholder="e.g., I-5 @ Exit 100"
+      />
+    </div>
 
-              <div className="form-group">
-                <label>Amount of Flaggers</label>
-                <input
-                  type="number"
-                  name="amountOfFlaggers"
-                  value={formData.amountOfFlaggers}
-                  onChange={handleChange}
-                  min="0"
-                  placeholder="e.g., 2"
-                />
-              </div>
-            </div>
+    <div className="form-group">
+      <label>Amount of Flaggers</label>
+      <input
+        type="number"
+        name="amountOfFlaggers"
+        value={formData.amountOfFlaggers}
+        onChange={handleChange}
+        min="0"
+        placeholder="e.g., 2"
+      />
+    </div>
+  </div>
 
             <h3 style={{ marginBottom: '12px', color: '#1a73e8' }}>Equipment</h3>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '24px' }}>

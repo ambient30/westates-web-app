@@ -3,6 +3,19 @@ import { collection, getDocs, doc, setDoc, updateDoc, serverTimestamp } from 'fi
 import { db, auth } from '../firebase';
 import { logAudit } from '../utils/auditLog';
 
+function generateTimeOptions() {
+  const times = [];
+  for (let hour = 0; hour < 24; hour++) {
+    for (let minute = 0; minute < 60; minute += 15) {
+      const h12 = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+      const ampm = hour < 12 ? 'AM' : 'PM';
+      const minuteStr = minute.toString().padStart(2, '0');
+      times.push(`${h12}:${minuteStr} ${ampm}`);
+    }
+  }
+  return times;
+}
+
 function ContinueJobModal({ job, onClose, onSave }) {
   const [formData, setFormData] = useState({
     initialJobDate: '',
@@ -154,25 +167,43 @@ function ContinueJobModal({ job, onClose, onSave }) {
             </div>
 
             <div className="form-group">
-              <label>Date for Continued Job *</label>
-              <input
-                type="date"
-                name="initialJobDate"
-                value={formData.initialJobDate}
-                onChange={handleChange}
-                required
-              />
-            </div>
+  <label>Date for Continued Job *</label>
+  <input
+    type="date"
+    name="initialJobDate"
+    value={formData.initialJobDate}
+    onChange={handleChange}
+    required
+    style={{
+      width: '100%',
+      padding: '8px',
+      border: '1px solid #dadce0',
+      borderRadius: '4px',
+      fontSize: '14px'
+    }}
+  />
+</div>
 
-            <div className="form-group">
-              <label>Time</label>
-              <input
-                name="initialJobTime"
-                value={formData.initialJobTime}
-                onChange={handleChange}
-                placeholder="e.g., 7:00 AM"
-              />
-            </div>
+<div className="form-group">
+  <label>Time</label>
+  <select
+    name="initialJobTime"
+    value={formData.initialJobTime}
+    onChange={handleChange}
+    style={{
+      width: '100%',
+      padding: '8px',
+      border: '1px solid #dadce0',
+      borderRadius: '4px',
+      fontSize: '14px'
+    }}
+  >
+    <option value="">Select time...</option>
+    {generateTimeOptions().map(time => (
+      <option key={time} value={time}>{time}</option>
+    ))}
+  </select>
+</div>
 
             <div className="form-group">
               <label>Meet/Set</label>

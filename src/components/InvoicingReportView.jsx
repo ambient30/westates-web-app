@@ -2,6 +2,92 @@ import { useState, useEffect } from 'react';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 
+// ============================================
+// HELPER FUNCTIONS
+// ============================================
+
+function isHoliday(dateString) {
+  const holidays2026 = [
+    "01/01/2026", "05/25/2026", "07/04/2026", 
+    "09/07/2026", "11/26/2026", "12/25/2026"
+  ];
+  return holidays2026.includes(dateString);
+}
+
+function isNightTime(timeString, overtimeNights) {
+  if (!overtimeNights || !timeString) return false;
+  
+  const match = overtimeNights.match(/(\d+)(am|pm)?\s*-\s*(\d+)(am|pm)?/i);
+  if (!match) return false;
+  
+  let startHour = parseInt(match[1]);
+  const startAmPm = match[2]?.toLowerCase();
+  let endHour = parseInt(match[3]);
+  const endAmPm = match[4]?.toLowerCase();
+  
+  if (startAmPm === 'pm' && startHour !== 12) startHour += 12;
+  if (startAmPm === 'am' && startHour === 12) startHour = 0;
+  if (endAmPm === 'pm' && endHour !== 12) endHour += 12;
+  if (endAmPm === 'am' && endHour === 12) endHour = 0;
+  
+  const timeMatch = timeString.match(/(\d+):(\d+)\s*(am|pm)/i);
+  if (!timeMatch) return false;
+  
+  let jobHour = parseInt(timeMatch[1]);
+  const jobAmPm = timeMatch[3].toLowerCase();
+  
+  if (jobAmPm === 'pm' && jobHour !== 12) jobHour += 12;
+  if (jobAmPm === 'am' && jobHour === 12) jobHour = 0;
+  
+  if (startHour < endHour) {
+    return jobHour >= startHour && jobHour < endHour;
+  } else {
+    return jobHour >= startHour || jobHour < endHour;
+  }
+}
+
+function isWeekend(dateString, weekendDuration) {
+  if (!weekendDuration || !dateString) return false;
+  
+  const [month, day, year] = dateString.split('/');
+  const date = new Date(year, month - 1, day);
+  const dayName = date.toLocaleDateString('en-US', { weekday: 'long' });
+  
+  return weekendDuration.toLowerCase().includes(dayName.toLowerCase());
+}
+
+// Calculate travel time: (input * 2 - 1hr), only if >= 1hr
+function calculateBillableTravel(travelTimeMinutes) {
+  if (!travelTimeMinutes) return 0;
+  
+  // Double for roundtrip, then subtract 1 hour
+  const roundtripHours = (travelTimeMinutes * 2) / 60;
+  const billableTravel = roundtripHours - 1;
+  
+  // Only billable if >= 1 hour
+  return billableTravel >= 1 ? billableTravel : 0;
+}
+
+// Calculate mileage: (input * 2), only if input >= 30
+function calculateBillableMileage(travelMiles) {
+  const miles = parseFloat(travelMiles) || 0;
+  
+  // Must be at least 30 miles one-way
+  if (miles < 30) return 0;
+  
+  // Double for roundtrip
+  return miles * 2;
+}
+
+// Check if this is an EPUD job (bills travel regardless)
+function isEPUDJob(job) {
+  return job.billing?.toUpperCase().includes('EPUD');
+}
+
+// ============================================
+// MAIN COMPONENT
+// ============================================
+
 function InvoicingReportView({ permissions }) {
   const [jobs, setJobs] = useState([]);
   const [rates, setRates] = useState([]);
@@ -18,14 +104,12 @@ function InvoicingReportView({ permissions }) {
     try {
       setLoading(true);
 
-      // Load jobs
       const jobsSnapshot = await getDocs(collection(db, 'jobs'));
       const jobsData = jobsSnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
 
-      // Load rates
       const ratesSnapshot = await getDocs(collection(db, 'rates'));
       const ratesData = ratesSnapshot.docs.map(doc => ({
         id: doc.id,
@@ -50,12 +134,14 @@ function InvoicingReportView({ permissions }) {
     const start = new Date(startDate);
     const end = new Date(endDate);
 
-    // Filter jobs in date range with actual hours
     const relevantJobs = jobs.filter(job => {
       if (!job.initialJobDate || !job.actualHours) return false;
-      const jobDate = new Date(job.initialJobDate);
+      const [month, day, year] = job.initialJobDate.split('/');
+      const jobDate = new Date(year, month - 1, day);
       return jobDate >= start && jobDate <= end;
     });
+
+    console.log('Relevant jobs for invoicing:', relevantJobs.length);
 
     // Group by billing client
     const clientInvoices = {};
@@ -64,7 +150,16 @@ function InvoicingReportView({ permissions }) {
       const client = job.billing || 'Unknown Client';
       const jobRate = rates.find(r => r.id === job.rateId);
       
-      if (!jobRate) return;
+      if (!jobRate) {
+        console.log('No rate found for job:', job.jobID);
+        return;
+      }
+
+      const isPrevailingWage = jobRate.flaggerPay > 0;
+      const isHolidayJob = isHoliday(job.initialJobDate);
+      const isWeekendJob = isWeekend(job.initialJobDate, jobRate.weekendDuration);
+      const isNightJob = isNightTime(job.initialJobTime, jobRate.overtimeNights);
+      const isEPUD = isEPUDJob(job);
 
       if (!clientInvoices[client]) {
         clientInvoices[client] = {
@@ -84,49 +179,110 @@ function InvoicingReportView({ permissions }) {
         };
       }
 
-      // Calculate billing for this job
-      let jobTotal = 0;
+      // Calculate billing for this job (sum all flaggers)
+      let jobTotalBilling = 0;
+      let jobTotalFlaggers = 0;
       const flaggers = Object.keys(job.actualHours || {});
+      jobTotalFlaggers = flaggers.length;
 
       flaggers.forEach(flagger => {
         const timeData = job.actualHours[flagger];
         const hoursWorked = parseFloat(timeData.hoursWorked || 0);
-        const travelHours = parseFloat(timeData.travelHours || 0);
 
-        // Apply hourly minimum (4 hrs regular, 2 hrs PW)
-        const minimumHours = jobRate.hourMinimum || 4;
-        const billableHours = Math.max(hoursWorked, minimumHours);
+        // Determine billing rates
+        const regularRate = parseFloat(jobRate.flaggerHours) || 0;
+        const otRate = parseFloat(jobRate.flaggerHoursOT) || 0;
+        const holidayRate = regularRate * (parseFloat(jobRate.holiday) || 2);
 
-        // Calculate OT (simplified: after 8 hours)
-        const regularHours = Math.min(billableHours, 8);
-        const otHours = Math.max(0, billableHours - 8);
+        // Calculate OT hours for this flagger
+        let regularHours = 0;
+        let otHours = 0;
+        let holidayHours = 0;
 
-        // Billing amounts
-        const regularBill = regularHours * jobRate.flaggerHours;
-        const otBill = otHours * jobRate.flaggerHoursOT;
+        if (isHolidayJob) {
+          holidayHours = hoursWorked;
+        } else if (isWeekendJob || isNightJob) {
+          otHours = hoursWorked;
+        } else {
+          const otStart = parseInt(jobRate.otStarts) || 8;
+          regularHours = Math.min(hoursWorked, otStart);
+          otHours = Math.max(0, hoursWorked - otStart);
+        }
+
+        // Apply hourly minimum PER FLAGGER
+        const minimumHours = parseFloat(jobRate.hourMinimum) || 4;
+        const totalActualHours = regularHours + otHours + holidayHours;
         
-        // Travel billing (roundtrip - 1hr, only if >=1hr)
-        const travelBill = travelHours >= 1 ? travelHours * jobRate.travelTime : 0;
+        if (totalActualHours < minimumHours) {
+          // Add extra regular hours to meet minimum
+          const shortfall = minimumHours - totalActualHours;
+          regularHours += shortfall;
+        }
 
-        // Mileage
-        const mileage = parseFloat(job.travelMiles || 0);
-        const mileageBill = mileage * jobRate.mileage;
+        // Calculate billing for this flagger
+        const flaggerBilling = (regularHours * regularRate) + 
+                               (otHours * otRate) + 
+                               (holidayHours * holidayRate);
 
-        jobTotal += regularBill + otBill + travelBill + mileageBill;
+        jobTotalBilling += flaggerBilling;
       });
+
+      // Add travel billing
+let travelBilling = 0;
+let mileageBilling = 0;
+
+
+if (isPrevailingWage) {
+  // Prevailing wage: NO travel time or mileage billed
+  travelBilling = 0;
+  mileageBilling = 0;
+} else if (isEPUD) {
+  // EPUD: Bill travel and mileage REGARDLESS of thresholds
+  const jobTravelMinutes = parseFloat(job.travelTime || 0);
+  const jobTravelMiles = parseFloat(job.travelMiles || 0);
+  
+  // EPUD: Double and bill regardless
+  const roundtripHours = (jobTravelMinutes * 2) / 60;
+  const roundtripMiles = jobTravelMiles * 2;
+  
+  travelBilling = roundtripHours * (parseFloat(jobRate.travelTime) || 0) * jobTotalFlaggers;
+  mileageBilling = roundtripMiles * (parseFloat(jobRate.mileage) || 0) * jobTotalFlaggers;
+} else {
+  // Regular job: Apply thresholds
+  const jobTravelMinutes = parseFloat(job.travelTime || 0);
+  const jobTravelMiles = parseFloat(job.travelMiles || 0);
+  
+  const billableTravelHours = calculateBillableTravel(jobTravelMinutes);
+  const billableMiles = calculateBillableMileage(jobTravelMiles);
+  
+  // Only bill if thresholds met
+  if (billableTravelHours > 0) {
+    travelBilling = billableTravelHours * (parseFloat(jobRate.travelTime) || 0) * jobTotalFlaggers;
+  }
+  
+  if (billableMiles > 0) {
+    mileageBilling = billableMiles * (parseFloat(jobRate.mileage) || 0) * jobTotalFlaggers;
+  }
+}
+
+      const totalJobAmount = jobTotalBilling + travelBilling + mileageBilling;
 
       clientInvoices[client].jobSeries[series].jobs.push({
         jobID: job.jobID,
         date: job.initialJobDate,
         location: job.location,
-        flaggers: flaggers.length,
-        amount: jobTotal
+        flaggers: jobTotalFlaggers,
+        laborBilling: jobTotalBilling,
+        travelBilling,
+        mileageBilling,
+        amount: totalJobAmount
       });
 
-      clientInvoices[client].jobSeries[series].totalAmount += jobTotal;
-      clientInvoices[client].totalAmount += jobTotal;
+      clientInvoices[client].jobSeries[series].totalAmount += totalJobAmount;
+      clientInvoices[client].totalAmount += totalJobAmount;
     });
 
+    console.log('Generated invoices:', clientInvoices);
     setInvoiceData(Object.values(clientInvoices));
   };
 
@@ -134,7 +290,7 @@ function InvoicingReportView({ permissions }) {
     if (!invoiceData) return;
 
     const rows = [];
-    rows.push(['Client', 'Job Series', 'Job ID', 'Date', 'Location', 'Flaggers', 'Amount']);
+    rows.push(['Client', 'Job Series', 'Job ID', 'Date', 'Location', 'Flaggers', 'Labor', 'Travel', 'Mileage', 'Total']);
 
     invoiceData.forEach(client => {
       Object.values(client.jobSeries).forEach(series => {
@@ -146,6 +302,9 @@ function InvoicingReportView({ permissions }) {
             job.date,
             job.location,
             job.flaggers,
+            job.laborBilling.toFixed(2),
+            job.travelBilling.toFixed(2),
+            job.mileageBilling.toFixed(2),
             job.amount.toFixed(2)
           ]);
         });
@@ -390,7 +549,10 @@ function JobSeriesBreakdown({ series }) {
                 <th style={{ padding: '8px', textAlign: 'left' }}>Date</th>
                 <th style={{ padding: '8px', textAlign: 'left' }}>Location</th>
                 <th style={{ padding: '8px', textAlign: 'right' }}>Flaggers</th>
-                <th style={{ padding: '8px', textAlign: 'right' }}>Amount</th>
+                <th style={{ padding: '8px', textAlign: 'right' }}>Labor</th>
+                <th style={{ padding: '8px', textAlign: 'right' }}>Travel</th>
+                <th style={{ padding: '8px', textAlign: 'right' }}>Mileage</th>
+                <th style={{ padding: '8px', textAlign: 'right' }}>Total</th>
               </tr>
             </thead>
             <tbody>
@@ -400,6 +562,9 @@ function JobSeriesBreakdown({ series }) {
                   <td style={{ padding: '8px' }}>{job.date}</td>
                   <td style={{ padding: '8px' }}>{job.location}</td>
                   <td style={{ padding: '8px', textAlign: 'right' }}>{job.flaggers}</td>
+                  <td style={{ padding: '8px', textAlign: 'right' }}>${job.laborBilling.toFixed(2)}</td>
+                  <td style={{ padding: '8px', textAlign: 'right' }}>${job.travelBilling.toFixed(2)}</td>
+                  <td style={{ padding: '8px', textAlign: 'right' }}>${job.mileageBilling.toFixed(2)}</td>
                   <td style={{ padding: '8px', textAlign: 'right', fontWeight: '600' }}>
                     ${job.amount.toFixed(2)}
                   </td>

@@ -3,6 +3,19 @@ import { collection, getDocs, doc, setDoc, serverTimestamp } from 'firebase/fire
 import { db, auth } from '../firebase';
 import { logAudit } from '../utils/auditLog';
 
+function generateTimeOptions() {
+  const times = [];
+  for (let hour = 0; hour < 24; hour++) {
+    for (let minute = 0; minute < 60; minute += 15) {
+      const h12 = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+      const ampm = hour < 12 ? 'AM' : 'PM';
+      const minuteStr = minute.toString().padStart(2, '0');
+      times.push(`${h12}:${minuteStr} ${ampm}`);
+    }
+  }
+  return times;
+}
+
 function CreateJobModal({ onClose, onSave }) {
   const [formData, setFormData] = useState({
     caller: '',
@@ -105,11 +118,19 @@ function CreateJobModal({ onClose, onSave }) {
       throw new Error('Please select a rate card');
     }
 
+    if (!formData.initialJobDate) {
+      throw new Error('Please select a date');
+    }
+
     const jobID = await generateJobID();
     
     // Get selected rate info
     const selectedRate = rates.find(r => r.id === formData.rateId);
     const rateName = selectedRate?.rateName || '';
+
+    // Convert date from YYYY-MM-DD (date picker format) to MM/DD/YYYY
+    const [year, month, day] = formData.initialJobDate.split('-');
+    const formattedDate = `${month}/${day}/${year}`;
 
     const jobData = {
       jobID,
@@ -117,7 +138,7 @@ function CreateJobModal({ onClose, onSave }) {
       billing: formData.billing.trim(),
       receiver: formData.receiver.trim(),
       poWoJobNum: formData.poWoJobNum.trim(),
-      initialJobDate: formData.initialJobDate.trim(),
+      initialJobDate: formattedDate,
       initialJobTime: formData.initialJobTime.trim(),
       meetSet: formData.meetSet.trim(),
       jobLength: formData.jobLength.trim(),
@@ -137,7 +158,7 @@ function CreateJobModal({ onClose, onSave }) {
       travelTime: formData.travelTime.trim(),
       travelMiles: formData.travelMiles.trim(),
       otherNotes: formData.otherNotes.trim(),
-      jobSeries: jobID, // Auto-generate as jobID initially
+      jobSeries: jobID,
       rateId: formData.rateId,
       rateName: rateName,
       hideFromSummary: false,
@@ -149,7 +170,6 @@ function CreateJobModal({ onClose, onSave }) {
       updatedBy: auth.currentUser?.email || 'unknown'
     };
 
-    // CHANGED: Use setDoc with jobID as document ID instead of addDoc
     await setDoc(doc(db, 'jobs', jobID), jobData);
     await logAudit('CREATE_JOB', 'jobs', jobID);
 
@@ -266,69 +286,88 @@ function CreateJobModal({ onClose, onSave }) {
 </div>
 
             <h3 style={{ marginBottom: '12px', color: '#1a73e8' }}>Job Details</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
-              <div className="form-group">
-                <label>Date</label>
-                <input
-                  name="initialJobDate"
-                  value={formData.initialJobDate}
-                  onChange={handleChange}
-                  placeholder="MM/DD/YYYY"
-                />
-              </div>
+  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
+    <div className="form-group">
+      <label>Date *</label>
+      <input
+        type="date"
+        name="initialJobDate"
+        value={formData.initialJobDate}
+        onChange={handleChange}
+        required
+        style={{
+          width: '100%',
+          padding: '8px',
+          border: '1px solid #dadce0',
+          borderRadius: '4px',
+          fontSize: '14px'
+        }}
+      />
+    </div>
 
-              <div className="form-group">
-                <label>Time</label>
-                <input
-                  name="initialJobTime"
-                  value={formData.initialJobTime}
-                  onChange={handleChange}
-                  placeholder="e.g., 7:00 AM"
-                />
-              </div>
+    <div className="form-group">
+      <label>Time</label>
+      <select
+        name="initialJobTime"
+        value={formData.initialJobTime}
+        onChange={handleChange}
+        style={{
+          width: '100%',
+          padding: '8px',
+          border: '1px solid #dadce0',
+          borderRadius: '4px',
+          fontSize: '14px'
+        }}
+      >
+        <option value="">Select time...</option>
+        {generateTimeOptions().map(time => (
+          <option key={time} value={time}>{time}</option>
+        ))}
+      </select>
+    </div>
 
-              <div className="form-group">
-                <label>Meet/Set</label>
-                <input
-                  name="meetSet"
-                  value={formData.meetSet}
-                  onChange={handleChange}
-                  placeholder="e.g., Meet at shop"
-                />
-              </div>
+    <div className="form-group">
+      <label>Meet/Set</label>
+      <input
+        name="meetSet"
+        value={formData.meetSet}
+        onChange={handleChange}
+        placeholder="e.g., Meet at shop"
+      />
+    </div>
 
-              <div className="form-group">
-                <label>Job Length</label>
-                <input
-                  name="jobLength"
-                  value={formData.jobLength}
-                  onChange={handleChange}
-                  placeholder="e.g., 8 hours"
-                />
-              </div>
+    <div className="form-group">
+      <label>Job Length</label>
+      <input
+        name="jobLength"
+        value={formData.jobLength}
+        onChange={handleChange}
+        placeholder="e.g., 8 hours"
+      />
+    </div>
 
-              <div className="form-group" style={{ gridColumn: '1 / -1' }}>
-                <label>Location</label>
-                <input
-                  name="location"
-                  value={formData.location}
-                  onChange={handleChange}
-                  placeholder="e.g., I-5 @ Exit 100"
-                />
-              </div>
+    <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+      <label>Location</label>
+      <input
+        name="location"
+        value={formData.location}
+        onChange={handleChange}
+        placeholder="e.g., I-5 @ Exit 100"
+      />
+    </div>
 
-              <div className="form-group">
-                <label>Amount of Flaggers</label>
-                <input
-                  type="number"
-                  name="amountOfFlaggers"
-                  value={formData.amountOfFlaggers}
-                  onChange={handleChange}
-                  min="0"
-                  placeholder="e.g., 2"
-                />
-              </div>
-            </div>
+    <div className="form-group">
+      <label>Amount of Flaggers</label>
+      <input
+        type="number"
+        name="amountOfFlaggers"
+        value={formData.amountOfFlaggers}
+        onChange={handleChange}
+        min="0"
+        placeholder="e.g., 2"
+      />
+    </div>
+  </div>
 
             <h3 style={{ marginBottom: '12px', color: '#1a73e8' }}>Equipment</h3>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '24px' }}>
