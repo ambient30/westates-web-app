@@ -182,11 +182,6 @@ function CreateJobModal({ onClose, onSave }) {
           <div className="modal-content" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
             {error && <div className="error-message">{error}</div>}
 
-            {/* DEBUG INFO */}
-            <div style={{ background: '#ffe', padding: '10px', marginBottom: '10px', border: '1px solid #cc0' }}>
-              <strong>DEBUG:</strong> Rates count: {rates.length}, Loading: {loadingRates ? 'YES' : 'NO'}
-            </div>
-
             {/* RATE CARD SELECTION */}
             <div style={{
               background: '#e8f0fe',
@@ -416,29 +411,32 @@ function CreateJobModal({ onClose, onSave }) {
             </div>
 
             <h3 style={{ marginBottom: '12px', color: '#1a73e8' }}>Travel & Billing</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
-              <div className="form-group">
-                <label>Travel Time (hours)</label>
-                <input
-                  name="travelTime"
-                  value={formData.travelTime}
-                  onChange={handleChange}
-                  placeholder="e.g., 1.5"
-                />
-              </div>
+<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
+  <div className="form-group">
+    <label>Travel Time (hours)</label>
+    <input
+      type="number"
+      step="0.01"
+      name="travelTime"
+      value={formData.travelTime}
+      onChange={handleChange}
+      placeholder="e.g., 1.25"
+    />
+  </div>
 
-              <div className="form-group">
-                <label>Travel Miles</label>
-                <input
-                  type="number"
-                  name="travelMiles"
-                  value={formData.travelMiles}
-                  onChange={handleChange}
-                  min="0"
-                  placeholder="e.g., 50"
-                />
-              </div>
-            </div>
+  <div className="form-group">
+    <label>Travel Miles</label>
+    <input
+      type="number"
+      step="0.01"
+      name="travelMiles"
+      value={formData.travelMiles}
+      onChange={handleChange}
+      min="0"
+      placeholder="e.g., 50.25"
+    />
+  </div>
+</div>
 
             <h3 style={{ marginBottom: '12px', color: '#1a73e8' }}>Notes</h3>
             <div className="form-group">

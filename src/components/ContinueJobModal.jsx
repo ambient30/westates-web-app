@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { collection, getDocs, doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, getDocs, doc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { logAudit } from '../utils/auditLog';
 
@@ -43,67 +43,84 @@ function ContinueJobModal({ job, onClose, onSave }) {
   };
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
+  e.preventDefault();
+  setError('');
+  setLoading(true);
 
-    try {
-      if (!formData.initialJobDate) {
-        throw new Error('Please select a date for the continued job');
-      }
-
-      const newJobID = await generateJobID();
-
-      const continuedJobData = {
-        jobID: newJobID,
-        caller: job.caller,
-        billing: job.billing,
-        receiver: job.receiver,
-        poWoJobNum: job.poWoJobNum,
-        initialJobDate: formData.initialJobDate,
-        initialJobTime: formData.initialJobTime.trim(),
-        meetSet: formData.meetSet.trim(),
-        jobLength: job.jobLength,
-        location: formData.location.trim(),
-        amountOfFlaggers: job.amountOfFlaggers,
-        assignedFlaggers: job.dispatchedFlaggers, // Carry forward dispatched flaggers
-        dispatchedFlaggers: '',
-        equipmentCarrier: '',
-        signSets: job.signSets,
-        indvSigns: job.indvSigns,
-        cones: job.cones,
-        type2: job.type2,
-        type3: job.type3,
-        truck: job.truck,
-        balloonLights: job.balloonLights,
-        portableLights: job.portableLights,
-        travelTime: job.travelTime,
-        travelMiles: job.travelMiles,
-        otherNotes: job.otherNotes,
-        jobSeries: job.jobSeries, // CHANGED: Carry forward the jobSeries
-        rateId: job.rateId,
-        rateName: job.rateName,
-        hideFromSummary: false,
-        custom: job.custom || {},
-        
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-        createdBy: auth.currentUser?.email || 'unknown',
-        updatedBy: auth.currentUser?.email || 'unknown'
-      };
-
-      // CHANGED: Use setDoc with jobID as document ID
-      await setDoc(doc(db, 'jobs', newJobID), continuedJobData);
-      await logAudit('CONTINUE_JOB', 'jobs', newJobID);
-
-      onSave();
-      onClose();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
+  try {
+    if (!formData.initialJobDate) {
+      throw new Error('Please select a date for the continued job');
     }
-  };
+
+    // Check if original job has a rate
+    if (!job.rateId) {
+      throw new Error('Original job does not have a rate card assigned. Please edit the original job to add a rate card before continuing it.');
+    }
+
+    const newJobID = await generateJobID();
+
+    // Convert date from YYYY-MM-DD to MM/DD/YYYY
+    const [year, month, day] = formData.initialJobDate.split('-');
+    const formattedDate = `${month}/${day}/${year}`;
+
+    const continuedJobData = {
+      jobID: newJobID,
+      caller: job.caller || '',
+      billing: job.billing || '',
+      receiver: job.receiver || '',
+      poWoJobNum: job.poWoJobNum || '',
+      initialJobDate: formattedDate, // CHANGED: Use formatted date
+      initialJobTime: formData.initialJobTime.trim(),
+      meetSet: formData.meetSet.trim(),
+      jobLength: job.jobLength || '',
+      location: formData.location.trim(),
+      amountOfFlaggers: job.amountOfFlaggers || '',
+      assignedFlaggers: job.dispatchedFlaggers || '',
+      dispatchedFlaggers: '',
+      equipmentCarrier: '',
+      signSets: job.signSets || '',
+      indvSigns: job.indvSigns || '',
+      cones: job.cones || '',
+      type2: job.type2 || '',
+      type3: job.type3 || '',
+      truck: job.truck || '',
+      balloonLights: job.balloonLights || '',
+      portableLights: job.portableLights || '',
+      travelTime: job.travelTime || '',
+      travelMiles: job.travelMiles || '',
+      otherNotes: job.otherNotes || '',
+      jobSeries: job.jobSeries || job.jobID,
+      rateId: job.rateId,
+      rateName: job.rateName || '',
+      hideFromSummary: false,
+      custom: job.custom || {},
+      
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      createdBy: auth.currentUser?.email || 'unknown',
+      updatedBy: auth.currentUser?.email || 'unknown'
+    };
+
+    // Create the new continued job
+    await setDoc(doc(db, 'jobs', newJobID), continuedJobData);
+    
+    // Hide the original job from summary
+    await updateDoc(doc(db, 'jobs', job.id), {
+      hideFromSummary: true,
+      updatedAt: serverTimestamp(),
+      updatedBy: auth.currentUser?.email || 'unknown'
+    });
+    
+    await logAudit('CONTINUE_JOB', 'jobs', newJobID);
+
+    onSave();
+    onClose();
+  } catch (err) {
+    setError(err.message);
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleOverlayMouseDown = (e) => {
     if (e.target === e.currentTarget) {
