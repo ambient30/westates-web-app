@@ -8,6 +8,7 @@ function CreateEmployeeModal({ onClose, onSave }) {
     fullName: '',
     phone: '',
     email: '',
+    payRate: '', // ADD THIS
     certifications: '',
     signs: '',
     extraSigns: '',
@@ -37,6 +38,7 @@ function CreateEmployeeModal({ onClose, onSave }) {
         fullName: formData.fullName.trim(),
         phone: formData.phone.trim(),
         email: formData.email.trim(),
+        payRate: parseFloat(formData.payRate) || 0, // ADD THIS
         certifications: formData.certifications.trim(),
         signs: formData.signs.trim(),
         extraSigns: formData.extraSigns.trim(),
@@ -50,7 +52,6 @@ function CreateEmployeeModal({ onClose, onSave }) {
         updatedBy: auth.currentUser?.email || 'unknown'
       };
 
-      // Use full name as document ID (sanitized)
       const docId = formData.fullName.trim().replace(/[\/\\]/g, '-');
       
       await setDoc(doc(db, 'employees', docId), employeeData);
@@ -109,9 +110,23 @@ function CreateEmployeeModal({ onClose, onSave }) {
               <input
                 type="email"
                 name="email"
-                value={formData.email}
+                value={formData.phone}
                 onChange={handleChange}
                 placeholder="john@example.com"
+              />
+            </div>
+
+            {/* ADD THIS FIELD */}
+            <div className="form-group">
+              <label>Pay Rate ($/hr) *</label>
+              <input
+                type="number"
+                step="0.01"
+                name="payRate"
+                value={formData.payRate}
+                onChange={handleChange}
+                required
+                placeholder="25.00"
               />
             </div>
 

@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { logAudit } from '../utils/auditLog';
+import { collection, getDocs, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { useEffect } from 'react'; // ADD THIS
 
 function DispatchFlaggersModal({ job, onClose, onSave }) {
   const assignedFlaggers = (job.assignedFlaggers || '').split(',').map(f => f.trim()).filter(Boolean);
@@ -12,17 +14,59 @@ function DispatchFlaggersModal({ job, onClose, onSave }) {
       return acc;
     }, {})
   );
+  
+  const [allJobs, setAllJobs] = useState([]);
+
+useEffect(() => {
+  // Load all jobs to check for conflicts
+  const loadJobs = async () => {
+    try {
+      const jobsSnapshot = await getDocs(collection(db, 'jobs'));
+      const jobsData = jobsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setAllJobs(jobsData);
+    } catch (err) {
+      console.error('Error loading jobs:', err);
+    }
+  };
+  loadJobs();
+}, []);
 
   const [equipmentCarrier, setEquipmentCarrier] = useState(job.equipmentCarrier || '');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   const handleFlaggerToggle = (flagger) => {
-    setSelectedFlaggers(prev => ({
-      ...prev,
-      [flagger]: !prev[flagger]
-    }));
-  };
+  // Check if toggling ON
+  if (!selectedFlaggers[flagger]) {
+    // Check for conflicts on same date
+    const conflictingJobs = allJobs.filter(j => 
+      j.initialJobDate === job.initialJobDate && 
+      j.id !== job.id &&
+      (j.dispatchedFlaggers || '').includes(flagger)
+    );
+
+    if (conflictingJobs.length > 0) {
+      const jobIDs = conflictingJobs.map(j => j.jobID).join(', ');
+      const confirmDispatch = window.confirm(
+        `${flagger} is already dispatched to job(s) ${jobIDs} on ${job.initialJobDate}.\n\n` +
+        `Do you want to dispatch them to this job as well?`
+      );
+      
+      if (!confirmDispatch) {
+        return; // Don't toggle
+      }
+    }
+  }
+
+  // Toggle the selection
+  setSelectedFlaggers(prev => ({
+    ...prev,
+    [flagger]: !prev[flagger]
+  }));
+};
 
   const handleSubmit = async (e) => {
     e.preventDefault();

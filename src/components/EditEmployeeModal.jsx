@@ -4,16 +4,17 @@ import { db, auth } from '../firebase';
 import { logAudit } from '../utils/auditLog';
 
 function EditEmployeeModal({ employee, onClose, onSave }) {
-  const [formData, setFormData] = useState({
-    fullName: employee.fullName || '',
-    phone: employee.phone || '',
-    email: employee.email || '',
-    certifications: employee.certifications || '',
-    signs: employee.signs || '',
-    extraSigns: employee.extraSigns || '',
-    cones: employee.cones || '',
-    notes: employee.notes || ''
-  });
+const [formData, setFormData] = useState({
+  fullName: employee.fullName || '',
+  payRate: employee.payRate || '', // ADD THIS
+  phone: employee.phone || '',
+  email: employee.email || '',
+  certifications: employee.certifications || '',
+  signs: employee.signs || '',
+  extraSigns: employee.extraSigns || '',
+  cones: employee.cones || '',
+  notes: employee.notes || ''
+});
 
   // Custom parameters
   const [customParams, setCustomParams] = useState(
@@ -91,6 +92,7 @@ function EditEmployeeModal({ employee, onClose, onSave }) {
 
       const updates = {
         fullName: formData.fullName.trim(),
+		payRate: parseFloat(formData.payRate) || 0,
         phone: formData.phone.trim(),
         email: formData.email.trim(),
         certifications: formData.certifications.trim(),
@@ -145,6 +147,17 @@ function EditEmployeeModal({ employee, onClose, onSave }) {
                   required
                 />
               </div>
+				<div className="form-group">
+				  <label>Pay Rate ($/hr) *</label>
+				  <input
+					type="number"
+					step="0.01"
+					name="payRate"
+					value={formData.payRate}
+					onChange={handleChange}
+					required
+				  />
+				</div>
 
               <div className="form-group">
                 <label>Phone</label>
