@@ -56,30 +56,23 @@ function isWeekend(dateString, weekendDuration) {
   return weekendDuration.toLowerCase().includes(dayName.toLowerCase());
 }
 
-// Calculate travel time: (input * 2 - 1hr), only if >= 1hr
 function calculateBillableTravel(travelTimeMinutes) {
   if (!travelTimeMinutes) return 0;
   
-  // Double for roundtrip, then subtract 1 hour
   const roundtripHours = (travelTimeMinutes * 2) / 60;
   const billableTravel = roundtripHours - 1;
   
-  // Only billable if >= 1 hour
   return billableTravel >= 1 ? billableTravel : 0;
 }
 
-// Calculate mileage: (input * 2), only if input >= 30
 function calculateBillableMileage(travelMiles) {
   const miles = parseFloat(travelMiles) || 0;
   
-  // Must be at least 30 miles one-way
   if (miles < 30) return 0;
   
-  // Double for roundtrip
   return miles * 2;
 }
 
-// Check if this is an EPUD job (bills travel regardless)
 function isEPUDJob(job) {
   return job.billing?.toUpperCase().includes('EPUD');
 }
@@ -143,7 +136,6 @@ function InvoicingReportView({ permissions }) {
 
     console.log('Relevant jobs for invoicing:', relevantJobs.length);
 
-    // Group by billing client
     const clientInvoices = {};
 
     relevantJobs.forEach(job => {
@@ -179,7 +171,6 @@ function InvoicingReportView({ permissions }) {
         };
       }
 
-      // Calculate billing for this job (sum all flaggers)
       let jobTotalBilling = 0;
       let jobTotalFlaggers = 0;
       const flaggers = Object.keys(job.actualHours || {});
@@ -189,12 +180,10 @@ function InvoicingReportView({ permissions }) {
         const timeData = job.actualHours[flagger];
         const hoursWorked = parseFloat(timeData.hoursWorked || 0);
 
-        // Determine billing rates
         const regularRate = parseFloat(jobRate.flaggerHours) || 0;
         const otRate = parseFloat(jobRate.flaggerHoursOT) || 0;
         const holidayRate = regularRate * (parseFloat(jobRate.holiday) || 2);
 
-        // Calculate OT hours for this flagger
         let regularHours = 0;
         let otHours = 0;
         let holidayHours = 0;
@@ -209,17 +198,14 @@ function InvoicingReportView({ permissions }) {
           otHours = Math.max(0, hoursWorked - otStart);
         }
 
-        // Apply hourly minimum PER FLAGGER
         const minimumHours = parseFloat(jobRate.hourMinimum) || 4;
         const totalActualHours = regularHours + otHours + holidayHours;
         
         if (totalActualHours < minimumHours) {
-          // Add extra regular hours to meet minimum
           const shortfall = minimumHours - totalActualHours;
           regularHours += shortfall;
         }
 
-        // Calculate billing for this flagger
         const flaggerBilling = (regularHours * regularRate) + 
                                (otHours * otRate) + 
                                (holidayHours * holidayRate);
@@ -227,43 +213,36 @@ function InvoicingReportView({ permissions }) {
         jobTotalBilling += flaggerBilling;
       });
 
-      // Add travel billing
-let travelBilling = 0;
-let mileageBilling = 0;
+      let travelBilling = 0;
+      let mileageBilling = 0;
 
-
-if (isPrevailingWage) {
-  // Prevailing wage: NO travel time or mileage billed
-  travelBilling = 0;
-  mileageBilling = 0;
-} else if (isEPUD) {
-  // EPUD: Bill travel and mileage REGARDLESS of thresholds
-  const jobTravelMinutes = parseFloat(job.travelTime || 0);
-  const jobTravelMiles = parseFloat(job.travelMiles || 0);
-  
-  // EPUD: Double and bill regardless
-  const roundtripHours = (jobTravelMinutes * 2) / 60;
-  const roundtripMiles = jobTravelMiles * 2;
-  
-  travelBilling = roundtripHours * (parseFloat(jobRate.travelTime) || 0) * jobTotalFlaggers;
-  mileageBilling = roundtripMiles * (parseFloat(jobRate.mileage) || 0) * jobTotalFlaggers;
-} else {
-  // Regular job: Apply thresholds
-  const jobTravelMinutes = parseFloat(job.travelTime || 0);
-  const jobTravelMiles = parseFloat(job.travelMiles || 0);
-  
-  const billableTravelHours = calculateBillableTravel(jobTravelMinutes);
-  const billableMiles = calculateBillableMileage(jobTravelMiles);
-  
-  // Only bill if thresholds met
-  if (billableTravelHours > 0) {
-    travelBilling = billableTravelHours * (parseFloat(jobRate.travelTime) || 0) * jobTotalFlaggers;
-  }
-  
-  if (billableMiles > 0) {
-    mileageBilling = billableMiles * (parseFloat(jobRate.mileage) || 0) * jobTotalFlaggers;
-  }
-}
+      if (isPrevailingWage) {
+        travelBilling = 0;
+        mileageBilling = 0;
+      } else if (isEPUD) {
+        const jobTravelMinutes = parseFloat(job.travelTime || 0);
+        const jobTravelMiles = parseFloat(job.travelMiles || 0);
+        
+        const roundtripHours = (jobTravelMinutes * 2) / 60;
+        const roundtripMiles = jobTravelMiles * 2;
+        
+        travelBilling = roundtripHours * (parseFloat(jobRate.travelTime) || 0) * jobTotalFlaggers;
+        mileageBilling = roundtripMiles * (parseFloat(jobRate.mileage) || 0) * jobTotalFlaggers;
+      } else {
+        const jobTravelMinutes = parseFloat(job.travelTime || 0);
+        const jobTravelMiles = parseFloat(job.travelMiles || 0);
+        
+        const billableTravelHours = calculateBillableTravel(jobTravelMinutes);
+        const billableMiles = calculateBillableMileage(jobTravelMiles);
+        
+        if (billableTravelHours > 0) {
+          travelBilling = billableTravelHours * (parseFloat(jobRate.travelTime) || 0) * jobTotalFlaggers;
+        }
+        
+        if (billableMiles > 0) {
+          mileageBilling = billableMiles * (parseFloat(jobRate.mileage) || 0) * jobTotalFlaggers;
+        }
+      }
 
       const totalJobAmount = jobTotalBilling + travelBilling + mileageBilling;
 
@@ -341,7 +320,6 @@ if (isPrevailingWage) {
         </div>
       </div>
 
-      {/* Date Range */}
       <div style={{
         background: 'white',
         padding: '24px',
@@ -404,7 +382,6 @@ if (isPrevailingWage) {
         </div>
       </div>
 
-      {/* Invoice Summary */}
       {invoiceData && (
         <div>
           <div style={{
@@ -457,7 +434,6 @@ function ClientInvoiceCard({ invoice }) {
       marginBottom: '16px',
       overflow: 'hidden'
     }}>
-      {/* Client Header */}
       <div
         onClick={() => setExpanded(!expanded)}
         style={{
@@ -487,7 +463,6 @@ function ClientInvoiceCard({ invoice }) {
         </div>
       </div>
 
-      {/* Job Series Breakdown */}
       {expanded && (
         <div style={{ padding: '20px', background: '#fafafa', borderTop: '2px solid #1a73e8' }}>
           {Object.values(invoice.jobSeries).map(series => (
@@ -509,7 +484,6 @@ function JobSeriesBreakdown({ series }) {
       marginBottom: '12px',
       overflow: 'hidden'
     }}>
-      {/* Series Header */}
       <div
         onClick={() => setExpanded(!expanded)}
         style={{
@@ -539,7 +513,6 @@ function JobSeriesBreakdown({ series }) {
         </div>
       </div>
 
-      {/* Daily Jobs */}
       {expanded && (
         <div style={{ padding: '12px', background: '#f8f9fa', borderTop: '1px solid #e0e0e0' }}>
           <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>

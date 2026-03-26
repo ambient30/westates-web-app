@@ -469,25 +469,7 @@ function JobTimeEntry({ job, employees, canUpdate, onUpdate, isLast }) {
                 />
               </div>
 
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', color: '#5f6368', marginBottom: '4px' }}>
-                  Retainment ($)
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={data.retainment || ''}
-                  onChange={(e) => handleTimeChange(flagger, 'retainment', e.target.value)}
-                  placeholder="0.00"
-                  style={{
-                    width: '100%',
-                    padding: '8px',
-                    border: '1px solid #dadce0',
-                    borderRadius: '4px',
-                    fontSize: '14px'
-                  }}
-                />
-              </div>
+              
             </div>
           </div>
         );

@@ -1,31 +1,22 @@
 import { useState, useEffect } from 'react';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 
 // ============================================
-// HELPER FUNCTIONS - PUT THEM HERE
+// HELPER FUNCTIONS
 // ============================================
 
-// Helper function to check if a date is a holiday
 function isHoliday(dateString) {
-  // dateString format: "MM/DD/YYYY"
   const holidays2026 = [
-    "01/01/2026", // New Year's Day
-    "05/25/2026", // Memorial Day (last Monday of May)
-    "07/04/2026", // Independence Day
-    "09/07/2026", // Labor Day (first Monday of September)
-    "11/26/2026", // Thanksgiving Day (fourth Thursday of November)
-    "12/25/2026"  // Christmas Day
+    "01/01/2026", "05/25/2026", "07/04/2026", 
+    "09/07/2026", "11/26/2026", "12/25/2026"
   ];
-  
   return holidays2026.includes(dateString);
 }
 
-// Helper function to check if time falls in night OT range
 function isNightTime(timeString, overtimeNights) {
   if (!overtimeNights || !timeString) return false;
   
-  // Parse "6pm - 6am" or "18:00 - 6:00" format
   const match = overtimeNights.match(/(\d+)(am|pm)?\s*-\s*(\d+)(am|pm)?/i);
   if (!match) return false;
   
@@ -34,76 +25,52 @@ function isNightTime(timeString, overtimeNights) {
   let endHour = parseInt(match[3]);
   const endAmPm = match[4]?.toLowerCase();
   
-  // Convert to 24-hour format
   if (startAmPm === 'pm' && startHour !== 12) startHour += 12;
   if (startAmPm === 'am' && startHour === 12) startHour = 0;
   if (endAmPm === 'pm' && endHour !== 12) endHour += 12;
   if (endAmPm === 'am' && endHour === 12) endHour = 0;
   
-  // Parse job time "7:00 AM" format
   const timeMatch = timeString.match(/(\d+):(\d+)\s*(am|pm)/i);
   if (!timeMatch) return false;
   
   let jobHour = parseInt(timeMatch[1]);
-  const jobMinute = parseInt(timeMatch[2]);
   const jobAmPm = timeMatch[3].toLowerCase();
   
   if (jobAmPm === 'pm' && jobHour !== 12) jobHour += 12;
   if (jobAmPm === 'am' && jobHour === 12) jobHour = 0;
   
-  // Check if job time falls in range
   if (startHour < endHour) {
-    // Normal range like 18-22 (6pm-10pm)
     return jobHour >= startHour && jobHour < endHour;
   } else {
-    // Overnight range like 18-6 (6pm-6am)
     return jobHour >= startHour || jobHour < endHour;
   }
 }
 
-// Helper function to check if date is a weekend
 function isWeekend(dateString, weekendDuration) {
   if (!weekendDuration || !dateString) return false;
   
-  // Parse "MM/DD/YYYY"
   const [month, day, year] = dateString.split('/');
   const date = new Date(year, month - 1, day);
   const dayName = date.toLocaleDateString('en-US', { weekday: 'long' });
   
-  // Check if day is in weekendDuration string
   return weekendDuration.toLowerCase().includes(dayName.toLowerCase());
 }
 
-// Calculate travel time: (input * 2 - 1hr), only if >= 1hr
 function calculateBillableTravel(travelTimeMinutes) {
   if (!travelTimeMinutes) return 0;
   
-  // Double for roundtrip, then subtract 1 hour
   const roundtripHours = (travelTimeMinutes * 2) / 60;
   const billableTravel = roundtripHours - 1;
   
-  // Only billable if >= 1 hour
   return billableTravel >= 1 ? billableTravel : 0;
 }
 
-// Calculate mileage: (input * 2), only if input >= 30
-function calculateBillableMileage(travelMiles) {
-  const miles = parseFloat(travelMiles) || 0;
-  
-  // Must be at least 30 miles one-way
-  if (miles < 30) return 0;
-  
-  // Double for roundtrip
-  return miles * 2;
-}
-
-// Check if this is an EPUD job (bills travel regardless)
-function isEPUDJob(job) {
+function isEPUDClient(job) {
   return job.billing?.toUpperCase().includes('EPUD');
 }
 
 // ============================================
-// END OF HELPER FUNCTIONS
+// MAIN COMPONENT
 // ============================================
 
 function PayrollReportView({ permissions }) {
@@ -114,238 +81,236 @@ function PayrollReportView({ permissions }) {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [payrollData, setPayrollData] = useState(null);
+  const [stipendAmount, setStipendAmount] = useState(25);
 
   useEffect(() => {
     loadData();
   }, []);
 
   const loadData = async () => {
-  try {
-    setLoading(true);
+    try {
+      setLoading(true);
 
-    // Load jobs
-    const jobsSnapshot = await getDocs(collection(db, 'jobs'));
-    const jobsData = jobsSnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
-    setJobs(jobsData);
-
-    // Load employees - FIX: use document ID as name
-    const employeesSnapshot = await getDocs(collection(db, 'employees'));
-    const employeesData = employeesSnapshot.docs.map(doc => {
-      const data = doc.data();
-      return {
+      // Load jobs
+      const jobsSnapshot = await getDocs(collection(db, 'jobs'));
+      const jobsData = jobsSnapshot.docs.map(doc => ({
         id: doc.id,
-        name: doc.id, // Use document ID as the employee name
-        ...data
-      };
-    });
-    
-    console.log('Loaded employees:', employeesData);
-    setEmployees(employeesData);
+        ...doc.data()
+      }));
+      setJobs(jobsData);
 
-    // Load rates
-    const ratesSnapshot = await getDocs(collection(db, 'rates'));
-    const ratesData = ratesSnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
-    setRates(ratesData);
-  } catch (err) {
-    console.error('Error loading data:', err);
-  } finally {
-    setLoading(false);
-  }
-};
+      // Load employees - use document ID as name
+      const employeesSnapshot = await getDocs(collection(db, 'employees'));
+      const employeesData = employeesSnapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          name: doc.id,
+          ...data
+        };
+      });
+      
+      console.log('Loaded employees:', employeesData);
+      setEmployees(employeesData);
+
+      // Load rates
+      const ratesSnapshot = await getDocs(collection(db, 'rates'));
+      const ratesData = ratesSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setRates(ratesData);
+
+      // Load global settings
+      const settingsDoc = await getDoc(doc(db, 'settings', 'global'));
+      if (settingsDoc.exists()) {
+        setStipendAmount(settingsDoc.data().signStipendAmount || 25);
+      }
+    } catch (err) {
+      console.error('Error loading data:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const generatePayroll = () => {
-  if (!startDate || !endDate) {
-    alert('Please select both start and end dates');
-    return;
-  }
-
-  const start = new Date(startDate);
-  const end = new Date(endDate);
-
-  // Filter jobs in date range with actual hours
-  const relevantJobs = jobs.filter(job => {
-    if (!job.initialJobDate || !job.actualHours) return false;
-    const [month, day, year] = job.initialJobDate.split('/');
-    const jobDate = new Date(year, month - 1, day);
-    return jobDate >= start && jobDate <= end;
-  });
-
-  console.log('Relevant jobs found:', relevantJobs.length);
-
-  // Calculate payroll per employee
-  const employeePayroll = {};
-
-  relevantJobs.forEach(job => {
-    const jobRate = rates.find(r => r.id === job.rateId);
-    if (!jobRate) {
-      console.log('No rate found for job:', job.jobID);
+    if (!startDate || !endDate) {
+      alert('Please select both start and end dates');
       return;
     }
 
-    const isPrevailingWage = jobRate.flaggerPay > 0;
-    const isHolidayJob = isHoliday(job.initialJobDate);
-    const isWeekendJob = isWeekend(job.initialJobDate, jobRate.weekendDuration);
-    const isNightJob = isNightTime(job.initialJobTime, jobRate.overtimeNights);
-    const isEPUD = isEPUDClient(job);
+    const start = new Date(startDate);
+    const end = new Date(endDate);
 
-    console.log(`Job ${job.jobID} - Holiday: ${isHolidayJob}, Weekend: ${isWeekendJob}, Night: ${isNightJob}, EPUD: ${isEPUD}`);
-
-    Object.entries(job.actualHours || {}).forEach(([employeeName, timeData]) => {
-      if (!employeePayroll[employeeName]) {
-        const emp = employees.find(e => e.name === employeeName);
-        employeePayroll[employeeName] = {
-          employeeName,
-          payRate: emp?.payRate || 0,
-          jobs: [],
-          totalRegularHours: 0,
-          totalOTHours: 0,
-          totalHolidayHours: 0,
-          totalTravelHours: 0,
-          totalFringe: 0,
-          totalStipends: 0,
-          totalRetainments: 0,
-          grossPay: 0
-        };
-      }
-
-      const hoursWorked = parseFloat(timeData.hoursWorked || 0);
-      const travelHours = parseFloat(timeData.travelHours || 0);
-      const signStipends = parseInt(timeData.signStipends || 0);
-      const retainment = parseFloat(timeData.retainment || 0);
-
-      console.log(`${employeeName} - Hours: ${hoursWorked}, Travel: ${travelHours}, Stipends: ${signStipends}`);
-
-      // Determine pay rates
-let regularRate = 0;
-let otRate = 0;
-let holidayRate = 0;
-let fringeRate = 0;
-
-if (isPrevailingWage) {
-  // Prevailing wage: use rate card rates
-  regularRate = parseFloat(jobRate.flaggerPay) || 0;
-  otRate = regularRate * 1.5;
-  holidayRate = regularRate * (parseFloat(jobRate.holiday) || 2);
-  fringeRate = parseFloat(jobRate.fringeBenefit) || 0;
-} else {
-  // Regular job: use employee rate
-  const emp = employees.find(e => e.name === employeeName);
-  
-  if (!emp) {
-    console.error(`Employee not found: "${employeeName}"`);
-    console.log('Available employees:', employees.map(e => e.name));
-  } else {
-    console.log(`Found employee: ${emp.name}, Pay Rate: ${emp.payRate}`);
-  }
-  
-  regularRate = parseFloat(emp?.payRate) || 0;
-  otRate = regularRate * 1.5;
-  holidayRate = regularRate * (parseFloat(jobRate.holiday) || 2);
-}
-
-      console.log(`Rates - Regular: $${regularRate}, OT: $${otRate}, Holiday: $${holidayRate}`);
-
-      // Calculate OT hours based on triggers
-      let regularHours = 0;
-      let otHours = 0;
-      let holidayHours = 0;
-
-      if (isHolidayJob) {
-        // ALL hours are holiday pay
-        holidayHours = hoursWorked;
-      } else if (isWeekendJob || isNightJob) {
-        // ALL hours are OT (weekend or night)
-        otHours = hoursWorked;
-      } else {
-        // Regular day: OT after otStarts hours
-        const otStart = parseInt(jobRate.otStarts) || 8;
-        regularHours = Math.min(hoursWorked, otStart);
-        otHours = Math.max(0, hoursWorked - otStart);
-      }
-
-      console.log(`Hours breakdown - Reg: ${regularHours}, OT: ${otHours}, Holiday: ${holidayHours}`);
-
-      // Travel pay calculation
-let travelPay = 0;
-let billableTravelHours = 0;
-let billableMiles = 0;
-
-const isEPUD = isEPUDClient(job);
-
-if (!isPrevailingWage) {
-  // Regular jobs: calculate travel
-  const jobTravelMinutes = parseFloat(job.travelTime || 0);
-  const jobTravelMiles = parseFloat(job.travelMiles || 0);
-  
-  if (isEPUD) {
-    // EPUD: Pay follows regular rules (must meet threshold)
-    billableTravelHours = calculateBillableTravel(jobTravelMinutes);
-    billableMiles = calculateBillableMileage(jobTravelMiles);
-  } else {
-    // Normal client: standard travel rules
-    billableTravelHours = calculateBillableTravel(jobTravelMinutes);
-    billableMiles = calculateBillableMileage(jobTravelMiles);
-  }
-  
-  // Calculate pay for this flagger's travel
-  travelPay = billableTravelHours * regularRate;
-  // Note: Mileage is not paid to employees, only billed to clients
-}
-// PW jobs: no travel pay
-
-      // Calculate pay components
-      const regularPay = regularHours * regularRate;
-      const otPay = otHours * otRate;
-      const holidayPay = holidayHours * holidayRate;
-      const fringePay = hoursWorked * fringeRate;
-      const stipendPay = signStipends * 25; // $25 per stipend
-
-      console.log(`Pay breakdown - Reg: $${regularPay}, OT: $${otPay}, Holiday: $${holidayPay}, Travel: $${travelPay}, Stipends: $${stipendPay}`);
-
-      const jobTotal = regularPay + otPay + holidayPay + travelPay + fringePay + stipendPay - retainment;
-
-      console.log(`Job total: $${jobTotal}`);
-
-      employeePayroll[employeeName].jobs.push({
-        jobID: job.jobID,
-        date: job.initialJobDate,
-        regularHours,
-        otHours,
-        holidayHours,
-        travelHours: billableTravelHours,
-        fringeHours: hoursWorked,
-        signStipends,
-        retainment,
-        regularPay,
-        otPay,
-        holidayPay,
-        travelPay,
-        fringePay,
-        stipendPay,
-        total: jobTotal,
-        isPrevailingWage
-      });
-
-      employeePayroll[employeeName].totalRegularHours += regularHours;
-      employeePayroll[employeeName].totalOTHours += otHours;
-      employeePayroll[employeeName].totalHolidayHours += holidayHours;
-      employeePayroll[employeeName].totalTravelHours += billableTravelHours;
-      employeePayroll[employeeName].totalFringe += fringePay;
-      employeePayroll[employeeName].totalStipends += signStipends;
-      employeePayroll[employeeName].totalRetainments += retainment;
-      employeePayroll[employeeName].grossPay += jobTotal;
+    const relevantJobs = jobs.filter(job => {
+      if (!job.initialJobDate || !job.actualHours) return false;
+      const [month, day, year] = job.initialJobDate.split('/');
+      const jobDate = new Date(year, month - 1, day);
+      return jobDate >= start && jobDate <= end;
     });
-  });
 
-  console.log('Final payroll data:', employeePayroll);
-  setPayrollData(Object.values(employeePayroll));
-};
+    console.log('Relevant jobs found:', relevantJobs.length);
+
+    const employeePayroll = {};
+
+    relevantJobs.forEach(job => {
+      const jobRate = rates.find(r => r.id === job.rateId);
+      if (!jobRate) {
+        console.log('No rate found for job:', job.jobID);
+        return;
+      }
+
+      const isPrevailingWage = jobRate.flaggerPay > 0;
+      const isHolidayJob = isHoliday(job.initialJobDate);
+      const isWeekendJob = isWeekend(job.initialJobDate, jobRate.weekendDuration);
+      const isNightJob = isNightTime(job.initialJobTime, jobRate.overtimeNights);
+
+      Object.entries(job.actualHours || {}).forEach(([employeeName, timeData]) => {
+        if (!employeePayroll[employeeName]) {
+          const emp = employees.find(e => e.name === employeeName);
+          employeePayroll[employeeName] = {
+            employeeName,
+            payRate: emp?.payRate || 0,
+            jobsByDate: {},
+            jobs: [],
+            totalRegularHours: 0,
+            totalOTHours: 0,
+            totalHolidayHours: 0,
+            totalTravelHours: 0,
+            totalFringe: 0,
+            totalStipends: 0,
+            grossPay: 0
+          };
+        }
+
+        const hoursWorked = parseFloat(timeData.hoursWorked || 0);
+        const signStipends = parseInt(timeData.signStipends || 0);
+
+        let regularRate = 0;
+        let otRate = 0;
+        let holidayRate = 0;
+        let fringeRate = 0;
+
+        if (isPrevailingWage) {
+          regularRate = parseFloat(jobRate.flaggerPay) || 0;
+          otRate = regularRate * 1.5;
+          holidayRate = regularRate * (parseFloat(jobRate.holiday) || 2);
+          fringeRate = parseFloat(jobRate.fringeBenefit) || 0;
+        } else {
+          const emp = employees.find(e => e.name === employeeName);
+          regularRate = parseFloat(emp?.payRate) || 0;
+          otRate = regularRate * 1.5;
+          holidayRate = regularRate * (parseFloat(jobRate.holiday) || 2);
+        }
+
+        let regularHours = 0;
+        let otHours = 0;
+        let holidayHours = 0;
+
+        if (isHolidayJob) {
+          holidayHours = hoursWorked;
+        } else if (isWeekendJob || isNightJob) {
+          otHours = hoursWorked;
+        } else {
+          const otStart = parseInt(jobRate.otStarts) || 8;
+          regularHours = Math.min(hoursWorked, otStart);
+          otHours = Math.max(0, hoursWorked - otStart);
+        }
+
+        let travelPay = 0;
+        let billableTravelHours = 0;
+
+        if (!isPrevailingWage) {
+          const jobTravelMinutes = parseFloat(job.travelTime || 0);
+          billableTravelHours = calculateBillableTravel(jobTravelMinutes);
+          travelPay = billableTravelHours * regularRate;
+        }
+
+        const regularPay = regularHours * regularRate;
+        const otPay = otHours * otRate;
+        const holidayPay = holidayHours * holidayRate;
+        const fringePay = hoursWorked * fringeRate;
+        const stipendPay = signStipends * stipendAmount;
+
+        const jobDate = job.initialJobDate;
+        if (!employeePayroll[employeeName].jobsByDate[jobDate]) {
+          employeePayroll[employeeName].jobsByDate[jobDate] = [];
+        }
+
+        employeePayroll[employeeName].jobsByDate[jobDate].push({
+          jobID: job.jobID,
+          date: jobDate,
+          regularHours,
+          otHours,
+          holidayHours,
+          travelHours: billableTravelHours,
+          fringeHours: hoursWorked,
+          signStipends,
+          regularPay,
+          otPay,
+          holidayPay,
+          travelPay,
+          fringePay,
+          stipendPay,
+          isPrevailingWage,
+          hourlyMinimum: parseFloat(jobRate.hourMinimum) || 4,
+          regularRate
+        });
+      });
+    });
+
+    // Apply daily minimums and calculate totals
+    Object.values(employeePayroll).forEach(employee => {
+      Object.entries(employee.jobsByDate).forEach(([date, dailyJobs]) => {
+        const dailyRegularHours = dailyJobs.reduce((sum, j) => sum + j.regularHours, 0);
+        const dailyOTHours = dailyJobs.reduce((sum, j) => sum + j.otHours, 0);
+        const dailyHolidayHours = dailyJobs.reduce((sum, j) => sum + j.holidayHours, 0);
+        const dailyTotalHours = dailyRegularHours + dailyOTHours + dailyHolidayHours;
+
+        const dailyMinimum = Math.max(...dailyJobs.map(j => j.hourlyMinimum));
+
+        let adjustedRegularHours = dailyRegularHours;
+        if (dailyTotalHours < dailyMinimum) {
+          adjustedRegularHours += (dailyMinimum - dailyTotalHours);
+        }
+
+        const regularRate = dailyJobs[0].regularRate;
+        const adjustedRegularPay = adjustedRegularHours * regularRate;
+
+        const dailyOTPay = dailyJobs.reduce((sum, j) => sum + j.otPay, 0);
+        const dailyHolidayPay = dailyJobs.reduce((sum, j) => sum + j.holidayPay, 0);
+        const dailyTravelPay = dailyJobs.reduce((sum, j) => sum + j.travelPay, 0);
+        const dailyFringePay = dailyJobs.reduce((sum, j) => sum + j.fringePay, 0);
+        const dailyStipendPay = dailyJobs.reduce((sum, j) => sum + j.stipendPay, 0);
+
+        const dailyTotal = adjustedRegularPay + dailyOTPay + dailyHolidayPay + dailyTravelPay + dailyFringePay + dailyStipendPay;
+
+        dailyJobs.forEach((job, index) => {
+          const jobTotal = index === 0 ? dailyTotal : 0;
+
+          employee.jobs.push({
+            ...job,
+            adjustedRegularHours: index === 0 ? adjustedRegularHours : job.regularHours,
+            total: jobTotal,
+            isFirstJobOfDay: index === 0,
+            dailyMinimumApplied: dailyTotalHours < dailyMinimum,
+            dailyTotalHours
+          });
+        });
+
+        employee.totalRegularHours += adjustedRegularHours;
+        employee.totalOTHours += dailyOTHours;
+        employee.totalHolidayHours += dailyHolidayHours;
+        employee.totalTravelHours += dailyJobs.reduce((sum, j) => sum + j.travelHours, 0);
+        employee.totalFringe += dailyFringePay;
+        employee.totalStipends += dailyJobs.reduce((sum, j) => sum + j.signStipends, 0);
+        employee.grossPay += dailyTotal;
+      });
+    });
+
+    console.log('Final payroll data:', employeePayroll);
+    setPayrollData(Object.values(employeePayroll));
+  };
 
   const exportToCSV = () => {
     if (!payrollData) return;
@@ -356,7 +321,6 @@ if (!isPrevailingWage) {
       'OT Hours',
       'Travel Hours',
       'Stipends',
-      'Retainments',
       'Gross Pay'
     ];
 
@@ -366,7 +330,6 @@ if (!isPrevailingWage) {
       emp.totalOTHours.toFixed(2),
       emp.totalTravelHours.toFixed(2),
       emp.totalStipends,
-      emp.totalRetainments.toFixed(2),
       emp.grossPay.toFixed(2)
     ]);
 
@@ -403,7 +366,6 @@ if (!isPrevailingWage) {
         </div>
       </div>
 
-      {/* Date Range */}
       <div style={{
         background: 'white',
         padding: '24px',
@@ -466,7 +428,6 @@ if (!isPrevailingWage) {
         </div>
       </div>
 
-      {/* Payroll Summary */}
       {payrollData && (
         <div style={{
           background: 'white',
@@ -523,7 +484,6 @@ function EmployeePayrollCard({ employee }) {
       marginBottom: '16px',
       overflow: 'hidden'
     }}>
-      {/* Employee Summary */}
       <div
         onClick={() => setExpanded(!expanded)}
         style={{
@@ -555,51 +515,63 @@ function EmployeePayrollCard({ employee }) {
         </div>
       </div>
 
-      {/* Job Details */}
       {expanded && (
         <div style={{ padding: '16px', background: '#fafafa', borderTop: '1px solid #e0e0e0' }}>
           <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
-  <thead>
-    <tr style={{ borderBottom: '2px solid #e0e0e0' }}>
-      <th style={{ padding: '8px', textAlign: 'left' }}>Job ID</th>
-      <th style={{ padding: '8px', textAlign: 'left' }}>Date</th>
-      <th style={{ padding: '8px', textAlign: 'right' }}>Reg Hrs</th>
-      <th style={{ padding: '8px', textAlign: 'right' }}>OT Hrs</th>
-      <th style={{ padding: '8px', textAlign: 'right' }}>Holiday Hrs</th>
-      <th style={{ padding: '8px', textAlign: 'right' }}>Travel Hrs</th>
-      {employee.jobs.some(j => j.isPrevailingWage) && (
-        <th style={{ padding: '8px', textAlign: 'right' }}>Fringe</th>
-      )}
-      <th style={{ padding: '8px', textAlign: 'right' }}>Stipends</th>
-      <th style={{ padding: '8px', textAlign: 'right' }}>Retainment</th>
-      <th style={{ padding: '8px', textAlign: 'right' }}>Total</th>
-    </tr>
-  </thead>
-  <tbody>
-    {employee.jobs.map((job, idx) => (
-      <tr key={idx} style={{ borderBottom: '1px solid #e0e0e0' }}>
-        <td style={{ padding: '8px' }}>{job.jobID}</td>
-        <td style={{ padding: '8px' }}>{job.date}</td>
-        <td style={{ padding: '8px', textAlign: 'right' }}>{job.regularHours.toFixed(2)}</td>
-        <td style={{ padding: '8px', textAlign: 'right' }}>{job.otHours.toFixed(2)}</td>
-        <td style={{ padding: '8px', textAlign: 'right' }}>{job.holidayHours.toFixed(2)}</td>
-        <td style={{ padding: '8px', textAlign: 'right' }}>{job.travelHours.toFixed(2)}</td>
-        {employee.jobs.some(j => j.isPrevailingWage) && (
-          <td style={{ padding: '8px', textAlign: 'right' }}>
-            ${job.fringePay.toFixed(2)}
-          </td>
-        )}
-        <td style={{ padding: '8px', textAlign: 'right' }}>{job.signStipends}</td>
-        <td style={{ padding: '8px', textAlign: 'right', color: '#d32f2f' }}>
-          ${job.retainment.toFixed(2)}
-        </td>
-        <td style={{ padding: '8px', textAlign: 'right', fontWeight: '600' }}>
-          ${job.total.toFixed(2)}
-        </td>
-      </tr>
-    ))}
-  </tbody>
-</table>
+            <thead>
+              <tr style={{ borderBottom: '2px solid #e0e0e0' }}>
+                <th style={{ padding: '8px', textAlign: 'left' }}>Job ID</th>
+                <th style={{ padding: '8px', textAlign: 'left' }}>Date</th>
+                <th style={{ padding: '8px', textAlign: 'right' }}>Reg Hrs</th>
+                <th style={{ padding: '8px', textAlign: 'right' }}>OT Hrs</th>
+                <th style={{ padding: '8px', textAlign: 'right' }}>Holiday Hrs</th>
+                <th style={{ padding: '8px', textAlign: 'right' }}>Travel Hrs</th>
+                {employee.jobs.some(j => j.isPrevailingWage) && (
+                  <th style={{ padding: '8px', textAlign: 'right' }}>Fringe</th>
+                )}
+                <th style={{ padding: '8px', textAlign: 'right' }}>Stipends</th>
+                <th style={{ padding: '8px', textAlign: 'right' }}>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {employee.jobs.map((job, idx) => (
+                <tr key={idx} style={{ 
+                  borderBottom: '1px solid #e0e0e0',
+                  background: job.dailyMinimumApplied && job.isFirstJobOfDay ? '#fff3e0' : 'transparent'
+                }}>
+                  <td style={{ padding: '8px' }}>
+                    {job.jobID}
+                    {job.dailyMinimumApplied && job.isFirstJobOfDay && (
+                      <span style={{ 
+                        marginLeft: '8px', 
+                        fontSize: '11px', 
+                        color: '#e65100',
+                        fontWeight: '600'
+                      }}>
+                        [Min: {job.dailyTotalHours.toFixed(2)}→{job.adjustedRegularHours.toFixed(2)}hrs]
+                      </span>
+                    )}
+                  </td>
+                  <td style={{ padding: '8px' }}>{job.date}</td>
+                  <td style={{ padding: '8px', textAlign: 'right' }}>
+                    {job.isFirstJobOfDay ? job.adjustedRegularHours.toFixed(2) : job.regularHours.toFixed(2)}
+                  </td>
+                  <td style={{ padding: '8px', textAlign: 'right' }}>{job.otHours.toFixed(2)}</td>
+                  <td style={{ padding: '8px', textAlign: 'right' }}>{job.holidayHours.toFixed(2)}</td>
+                  <td style={{ padding: '8px', textAlign: 'right' }}>{job.travelHours.toFixed(2)}</td>
+                  {employee.jobs.some(j => j.isPrevailingWage) && (
+                    <td style={{ padding: '8px', textAlign: 'right' }}>
+                      ${job.fringePay.toFixed(2)}
+                    </td>
+                  )}
+                  <td style={{ padding: '8px', textAlign: 'right' }}>{job.signStipends}</td>
+                  <td style={{ padding: '8px', textAlign: 'right', fontWeight: '600' }}>
+                    {job.isFirstJobOfDay ? `$${job.total.toFixed(2)}` : '(see first job)'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>

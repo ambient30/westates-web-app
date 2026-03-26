@@ -13,8 +13,7 @@ import RatesManager from './RatesManager';
 import TimeEntryView from './TimeEntryView';
 import PayrollReportView from './PayrollReportView';
 import InvoicingReportView from './InvoicingReportView';
-
-
+import SettingsView from './SettingsView';
 
 function Dashboard({ user, permissions }) {
   const [activeTab, setActiveTab] = useState('jobs');
@@ -131,6 +130,14 @@ function Dashboard({ user, permissions }) {
 >
   Invoicing
 </button>
+
+<button
+  className={activeTab === 'settings' ? 'tab-active' : ''}
+  onClick={() => setActiveTab('settings')}
+>
+  ⚙️ Settings
+</button>
+
 </div>
       </nav>
 
@@ -168,6 +175,9 @@ function Dashboard({ user, permissions }) {
 
 {activeTab === 'invoicing' && (
   <InvoicingReportView permissions={permissions} />
+)}
+{activeTab === 'settings' && (
+  <SettingsView permissions={permissions} />
 )}
 </main>
     </div>
