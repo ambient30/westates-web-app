@@ -379,102 +379,119 @@ useEffect(() => {
             </h4>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', color: '#5f6368', marginBottom: '4px' }}>
-                  Start Time
-                </label>
-                <input
-                  type="time"
-                  value={data.startTime || ''}
-                  onChange={(e) => handleTimeChange(flagger, 'startTime', e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '8px',
-                    border: '1px solid #dadce0',
-                    borderRadius: '4px',
-                    fontSize: '14px'
-                  }}
-                />
-              </div>
+  <div>
+    <label style={{ display: 'block', fontSize: '12px', color: '#5f6368', marginBottom: '4px' }}>
+      Start Time
+    </label>
+    <input
+      type="time"
+      value={data.startTime || ''}
+      onChange={(e) => handleTimeChange(flagger, 'startTime', e.target.value)}
+      style={{
+        width: '100%',
+        padding: '8px',
+        border: '1px solid #dadce0',
+        borderRadius: '4px',
+        fontSize: '14px'
+      }}
+    />
+  </div>
 
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', color: '#5f6368', marginBottom: '4px' }}>
-                  End Time
-                </label>
-                <input
-                  type="time"
-                  value={data.endTime || ''}
-                  onChange={(e) => handleTimeChange(flagger, 'endTime', e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '8px',
-                    border: '1px solid #dadce0',
-                    borderRadius: '4px',
-                    fontSize: '14px'
-                  }}
-                />
-              </div>
+  <div>
+    <label style={{ display: 'block', fontSize: '12px', color: '#5f6368', marginBottom: '4px' }}>
+      End Time
+    </label>
+    <input
+      type="time"
+      value={data.endTime || ''}
+      onChange={(e) => handleTimeChange(flagger, 'endTime', e.target.value)}
+      style={{
+        width: '100%',
+        padding: '8px',
+        border: '1px solid #dadce0',
+        borderRadius: '4px',
+        fontSize: '14px'
+      }}
+    />
+  </div>
 
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', color: '#5f6368', marginBottom: '4px' }}>
-                  Hours Worked
-                </label>
-                <input
-                  type="text"
-                  value={hours}
-                  readOnly
-                  style={{
-                    width: '100%',
-                    padding: '8px',
-                    border: '1px solid #dadce0',
-                    borderRadius: '4px',
-                    fontSize: '14px',
-                    background: '#f8f9fa'
-                  }}
-                />
-              </div>
+  <div>
+    <label style={{ display: 'block', fontSize: '12px', color: '#5f6368', marginBottom: '4px' }}>
+      Hours Worked
+    </label>
+    <input
+      type="text"
+      value={hours}
+      readOnly
+      style={{
+        width: '100%',
+        padding: '8px',
+        border: '1px solid #dadce0',
+        borderRadius: '4px',
+        fontSize: '14px',
+        background: '#f8f9fa'
+      }}
+    />
+  </div>
 
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', color: '#5f6368', marginBottom: '4px' }}>
-                  Travel Hours
-                </label>
-                <input
-                  type="number"
-                  step="0.25"
-                  value={data.travelHours || ''}
-                  onChange={(e) => handleTimeChange(flagger, 'travelHours', e.target.value)}
-                  placeholder="0"
-                  style={{
-                    width: '100%',
-                    padding: '8px',
-                    border: '1px solid #dadce0',
-                    borderRadius: '4px',
-                    fontSize: '14px'
-                  }}
-                />
-              </div>
+  {/* ADD THESE NEW FIELDS */}
+  <div>
+    <label style={{ display: 'block', fontSize: '12px', color: '#5f6368', marginBottom: '4px' }}>
+      Roundtrip Time (min)
+    </label>
+    <input
+      type="number"
+      value={data.actualTravelTime || ''}
+      onChange={(e) => handleTimeChange(flagger, 'actualTravelTime', e.target.value)}
+      placeholder="0"
+      style={{
+        width: '100%',
+        padding: '8px',
+        border: '1px solid #dadce0',
+        borderRadius: '4px',
+        fontSize: '14px'
+      }}
+    />
+  </div>
 
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', color: '#5f6368', marginBottom: '4px' }}>
-                  Sign Stipends
-                </label>
-                <input
-                  type="number"
-                  value={data.signStipends || ''}
-                  onChange={(e) => handleTimeChange(flagger, 'signStipends', e.target.value)}
-                  placeholder="0"
-                  style={{
-                    width: '100%',
-                    padding: '8px',
-                    border: '1px solid #dadce0',
-                    borderRadius: '4px',
-                    fontSize: '14px'
-                  }}
-                />
-              </div>
+  <div>
+    <label style={{ display: 'block', fontSize: '12px', color: '#5f6368', marginBottom: '4px' }}>
+      Roundtrip Miles
+    </label>
+    <input
+      type="number"
+      value={data.actualTravelMiles || ''}
+      onChange={(e) => handleTimeChange(flagger, 'actualTravelMiles', e.target.value)}
+      placeholder="0"
+      style={{
+        width: '100%',
+        padding: '8px',
+        border: '1px solid #dadce0',
+        borderRadius: '4px',
+        fontSize: '14px'
+      }}
+    />
+  </div>
 
-              
-            </div>
+  <div>
+    <label style={{ display: 'block', fontSize: '12px', color: '#5f6368', marginBottom: '4px' }}>
+      Sign Stipends
+    </label>
+    <input
+      type="number"
+      value={data.signStipends || ''}
+      onChange={(e) => handleTimeChange(flagger, 'signStipends', e.target.value)}
+      placeholder="0"
+      style={{
+        width: '100%',
+        padding: '8px',
+        border: '1px solid #dadce0',
+        borderRadius: '4px',
+        fontSize: '14px'
+      }}
+    />
+  </div>
+</div>
           </div>
         );
       })}

@@ -218,13 +218,24 @@ function PayrollReportView({ permissions }) {
         }
 
         let travelPay = 0;
-        let billableTravelHours = 0;
+let billableTravelHours = 0;
 
-        if (!isPrevailingWage) {
-          const jobTravelMinutes = parseFloat(job.travelTime || 0);
-          billableTravelHours = calculateBillableTravel(jobTravelMinutes);
-          travelPay = billableTravelHours * regularRate;
-        }
+if (!isPrevailingWage) {
+  // Use ACTUAL roundtrip time from time entry (not job estimate)
+  const actualTravelMinutes = parseFloat(timeData.actualTravelTime || 0);
+  
+  if (actualTravelMinutes > 0) {
+    // Roundtrip minus 1 hour
+    const roundtripHours = actualTravelMinutes / 60;
+    const billable = roundtripHours - 1;
+    
+    // Only pay if >= 1 hour after -1hr
+    if (billable >= 1) {
+      billableTravelHours = billable;
+      travelPay = billableTravelHours * regularRate;
+    }
+  }
+}
 
         const regularPay = regularHours * regularRate;
         const otPay = otHours * otRate;

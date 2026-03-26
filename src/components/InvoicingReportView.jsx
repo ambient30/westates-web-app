@@ -213,36 +213,46 @@ function InvoicingReportView({ permissions }) {
         jobTotalBilling += flaggerBilling;
       });
 
-      let travelBilling = 0;
-      let mileageBilling = 0;
+      // Add travel billing - use ACTUAL data from time entry
+let travelBilling = 0;
+let mileageBilling = 0;
 
-      if (isPrevailingWage) {
-        travelBilling = 0;
-        mileageBilling = 0;
-      } else if (isEPUD) {
-        const jobTravelMinutes = parseFloat(job.travelTime || 0);
-        const jobTravelMiles = parseFloat(job.travelMiles || 0);
-        
-        const roundtripHours = (jobTravelMinutes * 2) / 60;
-        const roundtripMiles = jobTravelMiles * 2;
-        
-        travelBilling = roundtripHours * (parseFloat(jobRate.travelTime) || 0) * jobTotalFlaggers;
-        mileageBilling = roundtripMiles * (parseFloat(jobRate.mileage) || 0) * jobTotalFlaggers;
-      } else {
-        const jobTravelMinutes = parseFloat(job.travelTime || 0);
-        const jobTravelMiles = parseFloat(job.travelMiles || 0);
-        
-        const billableTravelHours = calculateBillableTravel(jobTravelMinutes);
-        const billableMiles = calculateBillableMileage(jobTravelMiles);
-        
-        if (billableTravelHours > 0) {
-          travelBilling = billableTravelHours * (parseFloat(jobRate.travelTime) || 0) * jobTotalFlaggers;
-        }
-        
-        if (billableMiles > 0) {
-          mileageBilling = billableMiles * (parseFloat(jobRate.mileage) || 0) * jobTotalFlaggers;
-        }
-      }
+const isEPUD = isEPUDJob(job);
+
+// Get actual travel data (sum from all flaggers for this job)
+let totalActualTravelMinutes = 0;
+let totalActualTravelMiles = 0;
+
+Object.values(job.actualHours || {}).forEach(flaggerData => {
+  totalActualTravelMinutes += parseFloat(flaggerData.actualTravelTime || 0);
+  totalActualTravelMiles += parseFloat(flaggerData.actualTravelMiles || 0);
+});
+
+if (isPrevailingWage) {
+  // Prevailing wage: NO travel time or mileage billed
+  travelBilling = 0;
+  mileageBilling = 0;
+} else if (isEPUD) {
+  // EPUD: Bill travel and mileage REGARDLESS of thresholds
+  const roundtripHours = totalActualTravelMinutes / 60;
+  
+  travelBilling = roundtripHours * (parseFloat(jobRate.travelTime) || 0);
+  mileageBilling = totalActualTravelMiles * (parseFloat(jobRate.mileage) || 0);
+} else {
+  // Regular job: Apply thresholds
+  // Roundtrip time minus 1 hour, must be >= 1hr
+  const roundtripHours = totalActualTravelMinutes / 60;
+  const billableTravelHours = roundtripHours - 1;
+  
+  if (billableTravelHours >= 1) {
+    travelBilling = billableTravelHours * (parseFloat(jobRate.travelTime) || 0);
+  }
+  
+  // Roundtrip miles must be >= 60
+  if (totalActualTravelMiles >= 60) {
+    mileageBilling = totalActualTravelMiles * (parseFloat(jobRate.mileage) || 0);
+  }
+}
 
       const totalJobAmount = jobTotalBilling + travelBilling + mileageBilling;
 
