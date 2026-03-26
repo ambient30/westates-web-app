@@ -263,6 +263,10 @@ function TimeEntryView({ permissions }) {
 function JobTimeEntry({ job, employees, canUpdate, onUpdate, isLast }) {
   const [timeData, setTimeData] = useState(job.actualHours || {});
   const [saving, setSaving] = useState(false);
+useEffect(() => {
+    // Update timeData when job.actualHours changes (on reload)
+    setTimeData(job.actualHours || {});
+  }, [job.actualHours]);
 
   // Parse dispatched flaggers into array
   const flaggers = (job.dispatchedFlaggers || '').split(',').map(f => f.trim()).filter(Boolean);
