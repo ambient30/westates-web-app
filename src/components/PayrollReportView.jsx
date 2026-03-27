@@ -71,6 +71,7 @@ function PayrollReportView({ permissions }) {
   const [payrollData, setPayrollData] = useState(null);
   const [stipendAmount, setStipendAmount] = useState(25);
   const [conflicts, setConflicts] = useState(null);
+  const [accumulatedResolutions, setAccumulatedResolutions] = useState({});
 
   useEffect(() => {
     loadData();
@@ -122,6 +123,9 @@ function PayrollReportView({ permissions }) {
       alert('Please select both start and end dates');
       return;
     }
+
+    // Reset accumulated resolutions when starting fresh
+    setAccumulatedResolutions({});
 
     const start = new Date(startDate);
     const end = new Date(endDate);
@@ -196,7 +200,11 @@ function PayrollReportView({ permissions }) {
     processPayroll(relevantJobs, {});
   };
 
-  const handleConflictResolution = (resolutions) => {
+  const handleConflictResolution = (newResolutions) => {
+    // Merge new resolutions with accumulated ones
+    const allResolutions = { ...accumulatedResolutions, ...newResolutions };
+    setAccumulatedResolutions(allResolutions);
+
     const start = new Date(startDate);
     const end = new Date(endDate);
 
@@ -207,8 +215,76 @@ function PayrollReportView({ permissions }) {
       return jobDate >= start && jobDate <= end;
     });
 
-    processPayroll(relevantJobs, resolutions);
+    // Check if there are MORE unresolved conflicts
+    const employeeDayJobs = {};
+
+    relevantJobs.forEach(job => {
+      Object.keys(job.actualHours || {}).forEach(employeeName => {
+        const key = `${employeeName}-${job.initialJobDate}`;
+        if (!employeeDayJobs[key]) {
+          employeeDayJobs[key] = {
+            employeeName,
+            date: job.initialJobDate,
+            jobs: []
+          };
+        }
+        employeeDayJobs[key].jobs.push(job);
+      });
+    });
+
+    // Find remaining unresolved conflicts
+    const remainingConflicts = [];
+    Object.values(employeeDayJobs).forEach(dayInfo => {
+      if (dayInfo.jobs.length > 1) {
+        const resolutionKey = `${dayInfo.employeeName}-${dayInfo.date}`;
+        
+        // Skip if already resolved
+        if (allResolutions[resolutionKey]) {
+          return;
+        }
+
+        let totalHours = 0;
+        const jobDetails = [];
+        
+        dayInfo.jobs.forEach(job => {
+          const timeData = job.actualHours[dayInfo.employeeName];
+          const hours = parseFloat(timeData?.hoursWorked || 0);
+          totalHours += hours;
+          jobDetails.push({
+            jobID: job.jobID,
+            hours: hours
+          });
+        });
+
+        const firstJob = dayInfo.jobs[0];
+        const jobRate = rates.find(r => r.id === firstJob.rateId);
+        const minimum = parseFloat(jobRate?.hourMinimum) || 4;
+        const emp = employees.find(e => e.name === dayInfo.employeeName);
+        const payRate = parseFloat(emp?.payRate) || 0;
+
+        if (totalHours < minimum) {
+          remainingConflicts.push({
+            employeeName: dayInfo.employeeName,
+            date: dayInfo.date,
+            jobs: jobDetails,
+            totalHours,
+            minimum,
+            payRate
+          });
+        }
+      }
+    });
+
+    // If there are more conflicts, show modal again
+    if (remainingConflicts.length > 0) {
+      setConflicts(remainingConflicts);
+      return;
+    }
+
+    // No more conflicts, process payroll with all accumulated resolutions
+    processPayroll(relevantJobs, allResolutions);
     setConflicts(null);
+    setAccumulatedResolutions({});
   };
 
   const processPayroll = (relevantJobs, resolutions) => {
@@ -374,10 +450,11 @@ function PayrollReportView({ permissions }) {
           });
 
         } else if (resolution?.startsWith('select-')) {
-          const selectedJobs = resolution.split('-').slice(1);
+          const selectedJobsString = resolution.substring(7); // Remove 'select-'
+          const selectedJobs = selectedJobsString.split('-').filter(s => s !== '');
           
           dailyJobs.forEach((job, index) => {
-            const isSelected = selectedJobs.includes(`job-${index}`);
+            const isSelected = selectedJobs.includes(`job${index}`);
             const jobTotalHours = job.regularHours + job.otHours + job.holidayHours;
             let adjustedRegularHours = job.regularHours;
             

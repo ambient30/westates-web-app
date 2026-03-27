@@ -93,7 +93,7 @@ function DailyMinimumModal({ conflicts, onResolve, onCancel }) {
                     fontWeight: '600',
                     color: '#1565c0'
                   }}>
-                    Total: {conflict.totalHours.toFixed(2)} hours (< {conflict.minimum} hour minimum)
+                    Total: {conflict.totalHours.toFixed(2)} hours (less than {conflict.minimum} hour minimum)
                   </div>
                 </div>
 
@@ -179,16 +179,26 @@ function DailyMinimumModal({ conflicts, onResolve, onCancel }) {
                       }}>
                         <input
                           type="checkbox"
-                          checked={selectedResolution?.includes(`job-${jIdx}`)}
+                          checked={selectedResolution?.includes(`job${jIdx}`) || false}
                           onChange={(e) => {
-                            let newSelection = selectedResolution?.startsWith('select-') 
-                              ? selectedResolution.split('-').slice(1) 
-                              : [];
+                            let newSelection = [];
+                            
+                            // Parse existing selection
+                            if (selectedResolution?.startsWith('select-')) {
+                              const parts = selectedResolution.split('-').slice(1);
+                              newSelection = parts.filter(p => p !== ''); // Remove empty strings
+                            }
+                            
+                            const jobKey = `job${jIdx}`;
                             
                             if (e.target.checked) {
-                              newSelection.push(`job-${jIdx}`);
+                              // Add this job if not already selected
+                              if (!newSelection.includes(jobKey)) {
+                                newSelection.push(jobKey);
+                              }
                             } else {
-                              newSelection = newSelection.filter(s => s !== `job-${jIdx}`);
+                              // Remove this job
+                              newSelection = newSelection.filter(s => s !== jobKey);
                             }
 
                             const resolution = newSelection.length > 0 
@@ -206,7 +216,7 @@ function DailyMinimumModal({ conflicts, onResolve, onCancel }) {
                       <div style={{ fontSize: '12px', color: '#5f6368', marginTop: '8px', marginLeft: '24px' }}>
                         <strong>Result:</strong>
                         {conflict.jobs.map((job, jIdx) => {
-                          const isSelected = selectedResolution?.includes(`job-${jIdx}`);
+                          const isSelected = selectedResolution?.includes(`job${jIdx}`);
                           const hours = isSelected ? conflict.minimum : job.hours;
                           return (
                             <div key={jIdx}>
@@ -216,10 +226,10 @@ function DailyMinimumModal({ conflicts, onResolve, onCancel }) {
                         })}
                         <div style={{ marginTop: '4px', fontWeight: '600', color: '#1976d2' }}>
                           Total: {conflict.jobs.reduce((sum, job, jIdx) => {
-                            const isSelected = selectedResolution?.includes(`job-${jIdx}`);
+                            const isSelected = selectedResolution?.includes(`job${jIdx}`);
                             return sum + (isSelected ? conflict.minimum : job.hours);
                           }, 0).toFixed(2)} hrs × ${conflict.payRate}/hr = ${(conflict.jobs.reduce((sum, job, jIdx) => {
-                            const isSelected = selectedResolution?.includes(`job-${jIdx}`);
+                            const isSelected = selectedResolution?.includes(`job${jIdx}`);
                             return sum + (isSelected ? conflict.minimum : job.hours);
                           }, 0) * conflict.payRate).toFixed(2)}
                         </div>
