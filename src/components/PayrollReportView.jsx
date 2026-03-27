@@ -205,6 +205,10 @@ function PayrollReportView({ permissions }) {
     const allResolutions = { ...accumulatedResolutions, ...newResolutions };
     setAccumulatedResolutions(allResolutions);
 
+    console.log('=== CONFLICT RESOLUTION DEBUG ===');
+    console.log('New resolutions:', newResolutions);
+    console.log('All accumulated resolutions:', allResolutions);
+
     const start = new Date(startDate);
     const end = new Date(endDate);
 
@@ -214,6 +218,8 @@ function PayrollReportView({ permissions }) {
       const jobDate = new Date(year, month - 1, day);
       return jobDate >= start && jobDate <= end;
     });
+
+    console.log('Checking for more conflicts in', relevantJobs.length, 'jobs');
 
     // Check if there are MORE unresolved conflicts
     const employeeDayJobs = {};
@@ -232,14 +238,20 @@ function PayrollReportView({ permissions }) {
       });
     });
 
+    console.log('Employee-day combinations:', Object.keys(employeeDayJobs));
+
     // Find remaining unresolved conflicts
     const remainingConflicts = [];
     Object.values(employeeDayJobs).forEach(dayInfo => {
       if (dayInfo.jobs.length > 1) {
         const resolutionKey = `${dayInfo.employeeName}-${dayInfo.date}`;
         
+        console.log(`Checking ${resolutionKey}: ${dayInfo.jobs.length} jobs`);
+        console.log(`Already resolved? ${!!allResolutions[resolutionKey]}`);
+        
         // Skip if already resolved
         if (allResolutions[resolutionKey]) {
+          console.log(`Skipping ${resolutionKey} - already resolved`);
           return;
         }
 
@@ -262,7 +274,10 @@ function PayrollReportView({ permissions }) {
         const emp = employees.find(e => e.name === dayInfo.employeeName);
         const payRate = parseFloat(emp?.payRate) || 0;
 
+        console.log(`${resolutionKey}: totalHours=${totalHours}, minimum=${minimum}`);
+
         if (totalHours < minimum) {
+          console.log(`Adding ${resolutionKey} to remaining conflicts`);
           remainingConflicts.push({
             employeeName: dayInfo.employeeName,
             date: dayInfo.date,
@@ -275,13 +290,18 @@ function PayrollReportView({ permissions }) {
       }
     });
 
+    console.log('Remaining conflicts found:', remainingConflicts.length);
+    console.log('Remaining conflicts:', remainingConflicts);
+
     // If there are more conflicts, show modal again
     if (remainingConflicts.length > 0) {
+      console.log('Showing modal for remaining conflicts');
       setConflicts(remainingConflicts);
       return;
     }
 
     // No more conflicts, process payroll with all accumulated resolutions
+    console.log('No more conflicts, processing payroll with resolutions:', allResolutions);
     processPayroll(relevantJobs, allResolutions);
     setConflicts(null);
     setAccumulatedResolutions({});
