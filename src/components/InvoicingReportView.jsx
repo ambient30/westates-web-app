@@ -73,8 +73,9 @@ function calculateBillableMileage(travelMiles) {
   return miles * 2;
 }
 
-function isEPUDJob(job) {
-  return job.billing?.toUpperCase().includes('EPUD');
+function isEPUDJob(job, jobRate) {
+  if (!jobRate) return false;
+  return jobRate.name?.toUpperCase().includes('EPUD') || jobRate.id?.toUpperCase().includes('EPUD');
 }
 
 // ============================================
@@ -151,7 +152,7 @@ function InvoicingReportView({ permissions }) {
       const isHolidayJob = isHoliday(job.initialJobDate);
       const isWeekendJob = isWeekend(job.initialJobDate, jobRate.weekendDuration);
       const isNightJob = isNightTime(job.initialJobTime, jobRate.overtimeNights);
-      const isEPUD = isEPUDJob(job);
+      const isEPUD = isEPUDJob(job, jobRate);
 
       if (!clientInvoices[client]) {
         clientInvoices[client] = {
@@ -216,8 +217,6 @@ function InvoicingReportView({ permissions }) {
       // Add travel billing - use ACTUAL data from time entry
 let travelBilling = 0;
 let mileageBilling = 0;
-
-const isEPUD = isEPUDJob(job);
 
 // Get actual travel data (sum from all flaggers for this job)
 let totalActualTravelMinutes = 0;

@@ -65,8 +65,9 @@ function calculateBillableTravel(travelTimeMinutes) {
   return billableTravel >= 1 ? billableTravel : 0;
 }
 
-function isEPUDClient(job) {
-  return job.billing?.toUpperCase().includes('EPUD');
+function isEPUDRate(jobRate) {
+  if (!jobRate) return false;
+  return jobRate.name?.toUpperCase().includes('EPUD') || jobRate.id?.toUpperCase().includes('EPUD');
 }
 
 // ============================================
