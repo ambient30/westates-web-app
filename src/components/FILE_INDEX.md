@@ -39,6 +39,7 @@ Direct links to raw source files for easy access:
 - [InvoicingReportView.jsx] (https://raw.githubusercontent.com/ambient30/westates-web-app/refs/heads/main/src/components/InvoicingReportView.jsx)
 - [PayrollReportView.jsx)] (https://raw.githubusercontent.com/ambient30/westates-web-app/refs/heads/main/src/components/PayrollReportView.jsx)
 - [TimeEntryView.jsx] (https://raw.githubusercontent.com/ambient30/westates-web-app/refs/heads/main/src/components/TimeEntryView.jsx)
+- [DailyMinimumModal.jsx] (https://raw.githubusercontent.com/ambient30/westates-web-app/refs/heads/main/src/components/DailyMinimumModal.jsx)
 
 ## Other Views
 - [PinksView.jsx] (https://raw.githubusercontent.com/ambient30/westates-web-app/refs/heads/main/src/components/PinksView.jsx)

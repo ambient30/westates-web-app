@@ -1,6 +1,10 @@
 import { useState, useEffect } from 'react';
 import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
+import DailyMinimumModal from './DailyMinimumModal';
+
+const [conflicts, setConflicts] = useState(null);
+
 
 // ============================================
 // HELPER FUNCTIONS
@@ -135,194 +139,336 @@ function PayrollReportView({ permissions }) {
   };
 
   const generatePayroll = () => {
-    if (!startDate || !endDate) {
-      alert('Please select both start and end dates');
+  if (!startDate || !endDate) {
+    alert('Please select both start and end dates');
+    return;
+  }
+
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+
+  const relevantJobs = jobs.filter(job => {
+    if (!job.initialJobDate || !job.actualHours) return false;
+    const [month, day, year] = job.initialJobDate.split('/');
+    const jobDate = new Date(year, month - 1, day);
+    return jobDate >= start && jobDate <= end;
+  });
+
+  console.log('Relevant jobs found:', relevantJobs.length);
+
+  // First pass: detect conflicts
+  const employeeDayJobs = {};
+
+  relevantJobs.forEach(job => {
+    Object.keys(job.actualHours || {}).forEach(employeeName => {
+      const key = `${employeeName}-${job.initialJobDate}`;
+      if (!employeeDayJobs[key]) {
+        employeeDayJobs[key] = {
+          employeeName,
+          date: job.initialJobDate,
+          jobs: []
+        };
+      }
+      employeeDayJobs[key].jobs.push(job);
+    });
+  });
+
+  // Find conflicts (multiple jobs same day)
+  const detectedConflicts = [];
+  Object.values(employeeDayJobs).forEach(dayInfo => {
+    if (dayInfo.jobs.length > 1) {
+      // Calculate total hours for this employee on this day
+      let totalHours = 0;
+      const jobDetails = [];
+      
+      dayInfo.jobs.forEach(job => {
+        const timeData = job.actualHours[dayInfo.employeeName];
+        const hours = parseFloat(timeData?.hoursWorked || 0);
+        totalHours += hours;
+        jobDetails.push({
+          jobID: job.jobID,
+          hours: hours
+        });
+      });
+
+      // Get minimum and pay rate
+      const firstJob = dayInfo.jobs[0];
+      const jobRate = rates.find(r => r.id === firstJob.rateId);
+      const minimum = parseFloat(jobRate?.hourMinimum) || 4;
+      const emp = employees.find(e => e.name === dayInfo.employeeName);
+      const payRate = parseFloat(emp?.payRate) || 0;
+
+      // Only conflict if total < minimum
+      if (totalHours < minimum) {
+        detectedConflicts.push({
+          employeeName: dayInfo.employeeName,
+          date: dayInfo.date,
+          jobs: jobDetails,
+          totalHours,
+          minimum,
+          payRate
+        });
+      }
+    }
+  });
+
+  // If conflicts exist, show modal
+  if (detectedConflicts.length > 0) {
+    setConflicts(detectedConflicts);
+    return;
+  }
+
+  // No conflicts, proceed normally
+  processPayroll(relevantJobs, {});
+};
+
+const handleConflictResolution = (resolutions) => {
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+
+  const relevantJobs = jobs.filter(job => {
+    if (!job.initialJobDate || !job.actualHours) return false;
+    const [month, day, year] = job.initialJobDate.split('/');
+    const jobDate = new Date(year, month - 1, day);
+    return jobDate >= start && jobDate <= end;
+  });
+
+  processPayroll(relevantJobs, resolutions);
+  setConflicts(null);
+};
+
+const processPayroll = (relevantJobs, resolutions) => {
+  const employeePayroll = {};
+
+  relevantJobs.forEach(job => {
+    const jobRate = rates.find(r => r.id === job.rateId);
+    if (!jobRate) {
+      console.log('No rate found for job:', job.jobID);
       return;
     }
 
-    const start = new Date(startDate);
-    const end = new Date(endDate);
+    const isPrevailingWage = jobRate.flaggerPay > 0;
+    const isHolidayJob = isHoliday(job.initialJobDate);
+    const isWeekendJob = isWeekend(job.initialJobDate, jobRate.weekendDuration);
+    const isNightJob = isNightTime(job.initialJobTime, jobRate.overtimeNights);
 
-    const relevantJobs = jobs.filter(job => {
-      if (!job.initialJobDate || !job.actualHours) return false;
-      const [month, day, year] = job.initialJobDate.split('/');
-      const jobDate = new Date(year, month - 1, day);
-      return jobDate >= start && jobDate <= end;
-    });
-
-    console.log('Relevant jobs found:', relevantJobs.length);
-
-    const employeePayroll = {};
-
-    relevantJobs.forEach(job => {
-      const jobRate = rates.find(r => r.id === job.rateId);
-      if (!jobRate) {
-        console.log('No rate found for job:', job.jobID);
-        return;
+    Object.entries(job.actualHours || {}).forEach(([employeeName, timeData]) => {
+      if (!employeePayroll[employeeName]) {
+        const emp = employees.find(e => e.name === employeeName);
+        employeePayroll[employeeName] = {
+          employeeName,
+          payRate: emp?.payRate || 0,
+          jobsByDate: {},
+          jobs: [],
+          totalRegularHours: 0,
+          totalOTHours: 0,
+          totalHolidayHours: 0,
+          totalTravelHours: 0,
+          totalFringe: 0,
+          totalStipends: 0,
+          grossPay: 0
+        };
       }
 
-      const isPrevailingWage = jobRate.flaggerPay > 0;
-      const isHolidayJob = isHoliday(job.initialJobDate);
-      const isWeekendJob = isWeekend(job.initialJobDate, jobRate.weekendDuration);
-      const isNightJob = isNightTime(job.initialJobTime, jobRate.overtimeNights);
+      const hoursWorked = parseFloat(timeData.hoursWorked || 0);
+      const signStipends = parseInt(timeData.signStipends || 0);
 
-      Object.entries(job.actualHours || {}).forEach(([employeeName, timeData]) => {
-        if (!employeePayroll[employeeName]) {
-          const emp = employees.find(e => e.name === employeeName);
-          employeePayroll[employeeName] = {
-            employeeName,
-            payRate: emp?.payRate || 0,
-            jobsByDate: {},
-            jobs: [],
-            totalRegularHours: 0,
-            totalOTHours: 0,
-            totalHolidayHours: 0,
-            totalTravelHours: 0,
-            totalFringe: 0,
-            totalStipends: 0,
-            grossPay: 0
-          };
+      let regularRate = 0;
+      let otRate = 0;
+      let holidayRate = 0;
+      let fringeRate = 0;
+
+      if (isPrevailingWage) {
+        regularRate = parseFloat(jobRate.flaggerPay) || 0;
+        otRate = regularRate * 1.5;
+        holidayRate = regularRate * (parseFloat(jobRate.holiday) || 2);
+        fringeRate = parseFloat(jobRate.fringeBenefit) || 0;
+      } else {
+        const emp = employees.find(e => e.name === employeeName);
+        regularRate = parseFloat(emp?.payRate) || 0;
+        otRate = regularRate * 1.5;
+        holidayRate = regularRate * (parseFloat(jobRate.holiday) || 2);
+      }
+
+      let regularHours = 0;
+      let otHours = 0;
+      let holidayHours = 0;
+
+      if (isHolidayJob) {
+        holidayHours = hoursWorked;
+      } else if (isWeekendJob || isNightJob) {
+        otHours = hoursWorked;
+      } else {
+        const otStart = parseInt(jobRate.otStarts) || 8;
+        regularHours = Math.min(hoursWorked, otStart);
+        otHours = Math.max(0, hoursWorked - otStart);
+      }
+
+      let travelPay = 0;
+      let billableTravelHours = 0;
+
+      if (!isPrevailingWage) {
+        const actualTravelMinutes = parseFloat(timeData.actualTravelTime || 0);
+        
+        if (actualTravelMinutes > 0) {
+          const roundtripHours = actualTravelMinutes / 60;
+          const billable = roundtripHours - 1;
+          
+          if (billable >= 1) {
+            billableTravelHours = billable;
+            travelPay = billableTravelHours * regularRate;
+          }
         }
+      }
 
-        const hoursWorked = parseFloat(timeData.hoursWorked || 0);
-        const signStipends = parseInt(timeData.signStipends || 0);
+      const regularPay = regularHours * regularRate;
+      const otPay = otHours * otRate;
+      const holidayPay = holidayHours * holidayRate;
+      const fringePay = hoursWorked * fringeRate;
+      const stipendPay = signStipends * stipendAmount;
 
-        let regularRate = 0;
-        let otRate = 0;
-        let holidayRate = 0;
-        let fringeRate = 0;
+      const jobDate = job.initialJobDate;
+      if (!employeePayroll[employeeName].jobsByDate[jobDate]) {
+        employeePayroll[employeeName].jobsByDate[jobDate] = [];
+      }
 
-        if (isPrevailingWage) {
-          regularRate = parseFloat(jobRate.flaggerPay) || 0;
-          otRate = regularRate * 1.5;
-          holidayRate = regularRate * (parseFloat(jobRate.holiday) || 2);
-          fringeRate = parseFloat(jobRate.fringeBenefit) || 0;
-        } else {
-          const emp = employees.find(e => e.name === employeeName);
-          regularRate = parseFloat(emp?.payRate) || 0;
-          otRate = regularRate * 1.5;
-          holidayRate = regularRate * (parseFloat(jobRate.holiday) || 2);
-        }
-
-        let regularHours = 0;
-        let otHours = 0;
-        let holidayHours = 0;
-
-        if (isHolidayJob) {
-          holidayHours = hoursWorked;
-        } else if (isWeekendJob || isNightJob) {
-          otHours = hoursWorked;
-        } else {
-          const otStart = parseInt(jobRate.otStarts) || 8;
-          regularHours = Math.min(hoursWorked, otStart);
-          otHours = Math.max(0, hoursWorked - otStart);
-        }
-
-        let travelPay = 0;
-let billableTravelHours = 0;
-
-if (!isPrevailingWage) {
-  // Use ACTUAL roundtrip time from time entry (not job estimate)
-  const actualTravelMinutes = parseFloat(timeData.actualTravelTime || 0);
-  
-  if (actualTravelMinutes > 0) {
-    // Roundtrip minus 1 hour
-    const roundtripHours = actualTravelMinutes / 60;
-    const billable = roundtripHours - 1;
-    
-    // Only pay if >= 1 hour after -1hr
-    if (billable >= 1) {
-      billableTravelHours = billable;
-      travelPay = billableTravelHours * regularRate;
-    }
-  }
-}
-
-        const regularPay = regularHours * regularRate;
-        const otPay = otHours * otRate;
-        const holidayPay = holidayHours * holidayRate;
-        const fringePay = hoursWorked * fringeRate;
-        const stipendPay = signStipends * stipendAmount;
-
-        const jobDate = job.initialJobDate;
-        if (!employeePayroll[employeeName].jobsByDate[jobDate]) {
-          employeePayroll[employeeName].jobsByDate[jobDate] = [];
-        }
-
-        employeePayroll[employeeName].jobsByDate[jobDate].push({
-          jobID: job.jobID,
-          date: jobDate,
-          regularHours,
-          otHours,
-          holidayHours,
-          travelHours: billableTravelHours,
-          fringeHours: hoursWorked,
-          signStipends,
-          regularPay,
-          otPay,
-          holidayPay,
-          travelPay,
-          fringePay,
-          stipendPay,
-          isPrevailingWage,
-          hourlyMinimum: parseFloat(jobRate.hourMinimum) || 4,
-          regularRate
-        });
+      employeePayroll[employeeName].jobsByDate[jobDate].push({
+        jobID: job.jobID,
+        jobId: job.id,
+        date: jobDate,
+        regularHours,
+        otHours,
+        holidayHours,
+        travelHours: billableTravelHours,
+        fringeHours: hoursWorked,
+        signStipends,
+        regularPay,
+        otPay,
+        holidayPay,
+        travelPay,
+        fringePay,
+        stipendPay,
+        isPrevailingWage,
+        hourlyMinimum: parseFloat(jobRate.hourMinimum) || 4,
+        regularRate
       });
     });
+  });
 
-    // Apply daily minimums and calculate totals
-    Object.values(employeePayroll).forEach(employee => {
-      Object.entries(employee.jobsByDate).forEach(([date, dailyJobs]) => {
-        const dailyRegularHours = dailyJobs.reduce((sum, j) => sum + j.regularHours, 0);
-        const dailyOTHours = dailyJobs.reduce((sum, j) => sum + j.otHours, 0);
-        const dailyHolidayHours = dailyJobs.reduce((sum, j) => sum + j.holidayHours, 0);
-        const dailyTotalHours = dailyRegularHours + dailyOTHours + dailyHolidayHours;
+  // Apply resolutions and daily minimums
+  Object.values(employeePayroll).forEach(employee => {
+    Object.entries(employee.jobsByDate).forEach(([date, dailyJobs]) => {
+      const dailyRegularHours = dailyJobs.reduce((sum, j) => sum + j.regularHours, 0);
+      const dailyOTHours = dailyJobs.reduce((sum, j) => sum + j.otHours, 0);
+      const dailyHolidayHours = dailyJobs.reduce((sum, j) => sum + j.holidayHours, 0);
+      const dailyTotalHours = dailyRegularHours + dailyOTHours + dailyHolidayHours;
 
-        const dailyMinimum = Math.max(...dailyJobs.map(j => j.hourlyMinimum));
+      const dailyMinimum = Math.max(...dailyJobs.map(j => j.hourlyMinimum));
+      const regularRate = dailyJobs[0].regularRate;
 
+      // Check if user provided resolution for this employee-date
+      const resolutionKey = `${employee.employeeName}-${date}`;
+      const resolution = resolutions[resolutionKey];
+
+      let adjustedJobHours = [];
+
+      if (resolution === 'combine') {
+        // Combine all hours, apply minimum once
+        let adjustedRegularHours = dailyRegularHours;
+        if (dailyTotalHours < dailyMinimum) {
+          adjustedRegularHours += (dailyMinimum - dailyTotalHours);
+        }
+        
+        dailyJobs.forEach((job, index) => {
+          adjustedJobHours.push({
+            ...job,
+            adjustedRegularHours: index === 0 ? adjustedRegularHours : job.regularHours,
+            isFirstJobOfDay: index === 0
+          });
+        });
+
+      } else if (resolution === 'each') {
+        // Each job gets minimum
+        dailyJobs.forEach((job) => {
+          const jobTotalHours = job.regularHours + job.otHours + job.holidayHours;
+          let adjustedRegularHours = job.regularHours;
+          
+          if (jobTotalHours < dailyMinimum) {
+            adjustedRegularHours += (dailyMinimum - jobTotalHours);
+          }
+
+          adjustedJobHours.push({
+            ...job,
+            adjustedRegularHours,
+            isFirstJobOfDay: true // Each job shows its own pay
+          });
+        });
+
+      } else if (resolution?.startsWith('select-')) {
+        // Specific jobs get minimum
+        const selectedJobs = resolution.split('-').slice(1);
+        
+        dailyJobs.forEach((job, index) => {
+          const isSelected = selectedJobs.includes(`job-${index}`);
+          const jobTotalHours = job.regularHours + job.otHours + job.holidayHours;
+          let adjustedRegularHours = job.regularHours;
+          
+          if (isSelected && jobTotalHours < dailyMinimum) {
+            adjustedRegularHours += (dailyMinimum - jobTotalHours);
+          }
+
+          adjustedJobHours.push({
+            ...job,
+            adjustedRegularHours,
+            isFirstJobOfDay: true // Each job shows its own pay
+          });
+        });
+
+      } else {
+        // No resolution (single job or no conflict) - apply normal daily minimum
         let adjustedRegularHours = dailyRegularHours;
         if (dailyTotalHours < dailyMinimum) {
           adjustedRegularHours += (dailyMinimum - dailyTotalHours);
         }
 
-        const regularRate = dailyJobs[0].regularRate;
-        const adjustedRegularPay = adjustedRegularHours * regularRate;
-
-        const dailyOTPay = dailyJobs.reduce((sum, j) => sum + j.otPay, 0);
-        const dailyHolidayPay = dailyJobs.reduce((sum, j) => sum + j.holidayPay, 0);
-        const dailyTravelPay = dailyJobs.reduce((sum, j) => sum + j.travelPay, 0);
-        const dailyFringePay = dailyJobs.reduce((sum, j) => sum + j.fringePay, 0);
-        const dailyStipendPay = dailyJobs.reduce((sum, j) => sum + j.stipendPay, 0);
-
-        const dailyTotal = adjustedRegularPay + dailyOTPay + dailyHolidayPay + dailyTravelPay + dailyFringePay + dailyStipendPay;
-
         dailyJobs.forEach((job, index) => {
-          const jobTotal = index === 0 ? dailyTotal : 0;
-
-          employee.jobs.push({
+          adjustedJobHours.push({
             ...job,
             adjustedRegularHours: index === 0 ? adjustedRegularHours : job.regularHours,
-            total: jobTotal,
-            isFirstJobOfDay: index === 0,
-            dailyMinimumApplied: dailyTotalHours < dailyMinimum,
-            dailyTotalHours
+            isFirstJobOfDay: index === 0
           });
         });
+      }
 
-        employee.totalRegularHours += adjustedRegularHours;
-        employee.totalOTHours += dailyOTHours;
-        employee.totalHolidayHours += dailyHolidayHours;
-        employee.totalTravelHours += dailyJobs.reduce((sum, j) => sum + j.travelHours, 0);
-        employee.totalFringe += dailyFringePay;
-        employee.totalStipends += dailyJobs.reduce((sum, j) => sum + j.signStipends, 0);
-        employee.grossPay += dailyTotal;
+      // Calculate pay for each adjusted job
+      adjustedJobHours.forEach((job) => {
+        const adjustedRegularPay = job.adjustedRegularHours * regularRate;
+        const jobTotal = adjustedRegularPay + job.otPay + job.holidayPay + job.travelPay + job.fringePay + job.stipendPay;
+
+        employee.jobs.push({
+          ...job,
+          total: job.isFirstJobOfDay ? jobTotal : 0,
+          dailyMinimumApplied: dailyTotalHours < dailyMinimum,
+          dailyTotalHours,
+          resolution
+        });
+
+        if (job.isFirstJobOfDay) {
+          employee.totalRegularHours += job.adjustedRegularHours;
+          employee.totalOTHours += job.otHours;
+          employee.totalHolidayHours += job.holidayHours;
+          employee.totalTravelHours += job.travelHours;
+          employee.totalFringe += job.fringePay;
+          employee.totalStipends += job.signStipends;
+          employee.grossPay += jobTotal;
+        }
       });
     });
+  });
 
-    console.log('Final payroll data:', employeePayroll);
-    setPayrollData(Object.values(employeePayroll));
-  };
+  console.log('Final payroll data:', employeePayroll);
+  setPayrollData(Object.values(employeePayroll));
+};
 
   const exportToCSV = () => {
     if (!payrollData) return;
@@ -482,6 +628,13 @@ if (!isPrevailingWage) {
           <p>Select a date range and click "Generate Payroll" to view employee pay</p>
         </div>
       )}
+	  {conflicts && (
+  <DailyMinimumModal
+    conflicts={conflicts}
+    onResolve={handleConflictResolution}
+    onCancel={() => setConflicts(null)}
+  />
+)}
     </div>
   );
 }
