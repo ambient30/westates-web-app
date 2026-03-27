@@ -123,9 +123,6 @@ function PayrollReportView({ permissions }) {
       return;
     }
 
-    // Reset accumulated resolutions when starting fresh
-    setAccumulatedResolutions({});
-
     const start = new Date(startDate);
     const end = new Date(endDate);
 
