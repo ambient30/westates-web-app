@@ -71,7 +71,6 @@ function PayrollReportView({ permissions }) {
   const [payrollData, setPayrollData] = useState(null);
   const [stipendAmount, setStipendAmount] = useState(25);
   const [conflicts, setConflicts] = useState(null);
-  const [accumulatedResolutions, setAccumulatedResolutions] = useState({});
 
   useEffect(() => {
     loadData();
@@ -137,7 +136,7 @@ function PayrollReportView({ permissions }) {
       return jobDate >= start && jobDate <= end;
     });
 
-    // First pass: detect conflicts
+    // Detect ALL conflicts - check if employee has multiple jobs same day where ANY job < minimum
     const employeeDayJobs = {};
 
     relevantJobs.forEach(job => {
@@ -154,30 +153,42 @@ function PayrollReportView({ permissions }) {
       });
     });
 
-    // Find conflicts (multiple jobs same day)
+    // Find ALL conflicts (show all in one modal)
     const detectedConflicts = [];
     Object.values(employeeDayJobs).forEach(dayInfo => {
+      // Conflict exists if: multiple jobs on same day AND any individual job < minimum
       if (dayInfo.jobs.length > 1) {
-        let totalHours = 0;
         const jobDetails = [];
+        let hasConflict = false;
+        let totalHours = 0;
         
         dayInfo.jobs.forEach(job => {
           const timeData = job.actualHours[dayInfo.employeeName];
           const hours = parseFloat(timeData?.hoursWorked || 0);
           totalHours += hours;
+          
+          const jobRate = rates.find(r => r.id === job.rateId);
+          const minimum = parseFloat(jobRate?.hourMinimum) || 4;
+          
+          // Check if THIS individual job is below minimum
+          if (hours < minimum) {
+            hasConflict = true;
+          }
+          
           jobDetails.push({
             jobID: job.jobID,
             hours: hours
           });
         });
 
-        const firstJob = dayInfo.jobs[0];
-        const jobRate = rates.find(r => r.id === firstJob.rateId);
-        const minimum = parseFloat(jobRate?.hourMinimum) || 4;
-        const emp = employees.find(e => e.name === dayInfo.employeeName);
-        const payRate = parseFloat(emp?.payRate) || 0;
+        // Only add if there's actually a conflict (at least one job < minimum)
+        if (hasConflict) {
+          const firstJob = dayInfo.jobs[0];
+          const jobRate = rates.find(r => r.id === firstJob.rateId);
+          const minimum = parseFloat(jobRate?.hourMinimum) || 4;
+          const emp = employees.find(e => e.name === dayInfo.employeeName);
+          const payRate = parseFloat(emp?.payRate) || 0;
 
-        if (totalHours < minimum) {
           detectedConflicts.push({
             employeeName: dayInfo.employeeName,
             date: dayInfo.date,
@@ -190,7 +201,7 @@ function PayrollReportView({ permissions }) {
       }
     });
 
-    // If conflicts exist, show modal
+    // If conflicts exist, show ALL in one modal
     if (detectedConflicts.length > 0) {
       setConflicts(detectedConflicts);
       return;
@@ -200,15 +211,7 @@ function PayrollReportView({ permissions }) {
     processPayroll(relevantJobs, {});
   };
 
-  const handleConflictResolution = (newResolutions) => {
-    // Merge new resolutions with accumulated ones
-    const allResolutions = { ...accumulatedResolutions, ...newResolutions };
-    setAccumulatedResolutions(allResolutions);
-
-    console.log('=== CONFLICT RESOLUTION DEBUG ===');
-    console.log('New resolutions:', newResolutions);
-    console.log('All accumulated resolutions:', allResolutions);
-
+  const handleConflictResolution = (resolutions) => {
     const start = new Date(startDate);
     const end = new Date(endDate);
 
@@ -219,92 +222,9 @@ function PayrollReportView({ permissions }) {
       return jobDate >= start && jobDate <= end;
     });
 
-    console.log('Checking for more conflicts in', relevantJobs.length, 'jobs');
-
-    // Check if there are MORE unresolved conflicts
-    const employeeDayJobs = {};
-
-    relevantJobs.forEach(job => {
-      Object.keys(job.actualHours || {}).forEach(employeeName => {
-        const key = `${employeeName}-${job.initialJobDate}`;
-        if (!employeeDayJobs[key]) {
-          employeeDayJobs[key] = {
-            employeeName,
-            date: job.initialJobDate,
-            jobs: []
-          };
-        }
-        employeeDayJobs[key].jobs.push(job);
-      });
-    });
-
-    console.log('Employee-day combinations:', Object.keys(employeeDayJobs));
-
-    // Find remaining unresolved conflicts
-    const remainingConflicts = [];
-    Object.values(employeeDayJobs).forEach(dayInfo => {
-      if (dayInfo.jobs.length > 1) {
-        const resolutionKey = `${dayInfo.employeeName}-${dayInfo.date}`;
-        
-        console.log(`Checking ${resolutionKey}: ${dayInfo.jobs.length} jobs`);
-        console.log(`Already resolved? ${!!allResolutions[resolutionKey]}`);
-        
-        // Skip if already resolved
-        if (allResolutions[resolutionKey]) {
-          console.log(`Skipping ${resolutionKey} - already resolved`);
-          return;
-        }
-
-        let totalHours = 0;
-        const jobDetails = [];
-        
-        dayInfo.jobs.forEach(job => {
-          const timeData = job.actualHours[dayInfo.employeeName];
-          const hours = parseFloat(timeData?.hoursWorked || 0);
-          totalHours += hours;
-          jobDetails.push({
-            jobID: job.jobID,
-            hours: hours
-          });
-        });
-
-        const firstJob = dayInfo.jobs[0];
-        const jobRate = rates.find(r => r.id === firstJob.rateId);
-        const minimum = parseFloat(jobRate?.hourMinimum) || 4;
-        const emp = employees.find(e => e.name === dayInfo.employeeName);
-        const payRate = parseFloat(emp?.payRate) || 0;
-
-        console.log(`${resolutionKey}: totalHours=${totalHours}, minimum=${minimum}`);
-
-        if (totalHours < minimum) {
-          console.log(`Adding ${resolutionKey} to remaining conflicts`);
-          remainingConflicts.push({
-            employeeName: dayInfo.employeeName,
-            date: dayInfo.date,
-            jobs: jobDetails,
-            totalHours,
-            minimum,
-            payRate
-          });
-        }
-      }
-    });
-
-    console.log('Remaining conflicts found:', remainingConflicts.length);
-    console.log('Remaining conflicts:', remainingConflicts);
-
-    // If there are more conflicts, show modal again
-    if (remainingConflicts.length > 0) {
-      console.log('Showing modal for remaining conflicts');
-      setConflicts(remainingConflicts);
-      return;
-    }
-
-    // No more conflicts, process payroll with all accumulated resolutions
-    console.log('No more conflicts, processing payroll with resolutions:', allResolutions);
-    processPayroll(relevantJobs, allResolutions);
+    // Process payroll with all resolutions
+    processPayroll(relevantJobs, resolutions);
     setConflicts(null);
-    setAccumulatedResolutions({});
   };
 
   const processPayroll = (relevantJobs, resolutions) => {
