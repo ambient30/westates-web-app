@@ -13,10 +13,11 @@
 1. [System Purpose](#system-purpose)
 2. [Current Features](#current-features)
 3. [Component Architecture](#component-architecture)
-4. [Data Structure](#data-structure)
-5. [Business Logic](#business-logic)
-6. [User Workflows](#user-workflows)
-7. [Key Design Patterns](#key-design-patterns)
+4. [UI Design Patterns](#ui-design-patterns)
+5. [Data Structure](#data-structure)
+6. [Business Logic](#business-logic)
+7. [User Workflows](#user-workflows)
+8. [Key Design Patterns](#key-design-patterns)
 
 ---
 
@@ -41,6 +42,7 @@ Westates Flagman is a **flagging company management system** for traffic control
 - Job lifecycle: Created → Dispatched → Active → Completed → Returned
 - Custom fields per job (pilot car driver, weather conditions, client priority, etc.)
 - Job series grouping for recurring work
+- **Compact jobs list view with optimized screen space**
 
 ### ✅ **People Management**
 - **Employees:** Full profiles with certifications, insurance, equipment, pay rates
@@ -115,8 +117,8 @@ Westates Flagman is a **flagging company management system** for traffic control
 ```
 App.jsx
 ├── Dashboard.jsx (main navigation)
-│   ├── JobsList.jsx (all jobs view)
-│   │   └── JobCard.jsx (individual job display)
+│   ├── JobsList.jsx (compact jobs view with optimized display)
+│   │   └── JobRow (individual job display - inline component)
 │   ├── EmployeesList.jsx (employee management)
 │   ├── ContractorsList.jsx (contractor management)
 │   ├── PayrollReportView.jsx (payroll calculations)
@@ -154,6 +156,63 @@ App.jsx
 
 ---
 
+## UI DESIGN PATTERNS
+
+### **Compact Jobs List Design (March 2026)**
+
+**Purpose:** Maximize visible jobs on screen while maintaining readability
+
+#### **Space Optimization:**
+- **Section Headers:** 6px vertical padding (was 16px) - 62% reduction
+- **Date Headers:** 8px vertical padding (was 12px) - 33% reduction  
+- **Job Rows:** 8px vertical padding (was 10px) - 20% reduction
+- **Font Sizes:** 11-13px (was 14-18px)
+- **Result:** 30-40% more jobs visible per screen
+
+#### **Column Order (Left to Right):**
+1. **Flaggers** (160px) - Shows assigned flaggers
+   - Dispatched flaggers: normal color
+   - Unassigned flaggers: red, bold
+   - Placeholders for unfilled positions
+
+2. **Length** (70px) - Job duration
+
+3. **Time** (70px) - Start time
+
+4. **Meet/Set** (80px) - Meeting/setup time
+
+5. **Billing** (100px) - Client being billed
+
+6. **Caller** (100px) - Who called in the job
+
+7. **Location** (flex) - Job location
+
+8. **Sign Carrier(s)** (140px) - Equipment carriers
+   - Format: "FirstName L - signs,extraSigns,X cones"
+   - Example: "Dylan C - 2,1,12 cones"
+   - Omits 0 values (no "0 cones")
+
+9. **Admin Buttons** (220px) - Two-row layout
+   - Row 1: Assign | Dispatch | Edit (standard buttons)
+   - Row 2: Continue (green) | Return (orange) | Finish (red)
+
+#### **Visual Hierarchy:**
+```
+Section Header (Broken Jobs / This Week / etc.)
+  ├── Date Group (Monday, March 31)
+  │   ├── Job Row 1 (clickable, shows details modal)
+  │   ├── Job Row 2
+  │   └── Job Row 3
+  └── Date Group (Tuesday, April 1)
+```
+
+#### **Interaction Patterns:**
+- Click job row → Opens JobDetailsModal
+- Click buttons → Opens respective modal (stops propagation)
+- Hover → Row highlights with subtle shadow
+
+---
+
 ## DATA STRUCTURE
 
 ### **Firestore Collections**
@@ -166,15 +225,19 @@ App.jsx
   location: "I-5 Exit 194",
   initialJobDate: "04/15/2026",
   initialJobTime: "7:00 AM",
+  meetSet: "6:45 AM", // Meet/setup time
+  jobLength: "8 hours",
   jobSeries: "ODOT-I5-APRIL",
   billing: "ODOT",
   rateId: "rate_odot_standard",
   status: "dispatched", // created|dispatched|active|completed|returned
+  equipmentCarrier: "Dylan W Cummings, Brian Smith", // Sign carriers
   
   // Estimates (from job creation)
   estimatedHours: 8,
   estimatedTravelTime: 45, // minutes one-way
   estimatedTravelMiles: 30, // miles one-way
+  amountOfFlaggers: 2,
   
   // Assignment
   assignedFlaggers: "Dylan W Cummings, Brian Smith",
@@ -239,10 +302,10 @@ App.jsx
   medicalInsurance: true,
   retirement401k: false,
   
-  // Equipment
-  signs: 2,
-  extraSigns: 0,
-  cones: 12,
+  // Equipment (used in Sign Carrier display)
+  signs: 2,          // Shows in job list
+  extraSigns: 0,     // Shows if > 0
+  cones: 12,         // Shows as "12 cones" if > 0
   stands: 2,
   otherEquipment: "Vest, Hard Hat",
   
@@ -595,9 +658,40 @@ if (isEPUD) {
 }
 ```
 
+### **5. Sign Carrier Equipment Display**
+```javascript
+// Format: "FirstName L - signs,extraSigns,X cones"
+const formatSignCarriers = (employees, carriers) => {
+  return employees.map(emp => {
+    const parts = [];
+    if (emp.signs) parts.push(emp.signs);
+    if (emp.extraSigns) parts.push(emp.extraSigns);
+    if (emp.cones) parts.push(`${emp.cones} cones`);
+    
+    const firstName = emp.fullName.split(' ')[0];
+    const lastInitial = emp.fullName.split(' ').pop()[0];
+    
+    return parts.length > 0 
+      ? `${firstName} ${lastInitial} - ${parts.join(',')}`
+      : `${firstName} ${lastInitial} - No equipment`;
+  }).join('\n');
+};
+
+// Example output:
+// Dylan C - 2,1,12 cones
+// Brian S - 3,0,15 cones
+```
+
 ---
 
 ## TESTING CHECKLIST
+
+### **UI Tests**
+- ✅ UI1: Section headers are compact (6px padding)
+- ✅ UI2: Columns in correct order
+- ✅ UI3: Sign carriers show equipment format
+- ✅ UI4: Buttons arranged in two rows
+- ✅ UI5: 30-40% more jobs visible on screen
 
 ### **Payroll Tests**
 - ✅ P1: Regular day calculation
@@ -634,11 +728,16 @@ if (isEPUD) {
 5. No re-reads - pass objects, don't reload
 6. Safety checks - confirm before bulk operations
 
+**Current Usage:**
+- ~1,070 reads/day (2.1% of limit)
+- ~37 writes/day (<1% of limit)
+- Well within free tier with room for 10× growth
+
 ---
 
 ## VERSION HISTORY
 
-**Current Version:** 1.0  
+**Current Version:** 1.1  
 **Last Major Update:** March 31, 2026
 
 **Completed Features:**
@@ -649,8 +748,11 @@ if (isEPUD) {
 - Invoicing with per-flagger travel/mileage
 - Rate card management
 - Authentication and permissions
+- **Compact jobs list UI (March 2026)**
 
 **In Progress:**
+- Job details modal enhancement
+- Admin button workflow improvements
 - CSV export formatting for Paychex/QuickBooks
 - SMS dispatch integration with ClickSend
 

@@ -2,7 +2,7 @@
 
 **Last Updated:** March 31, 2026  
 **Project Status:** Active Development  
-**Current Phase:** Feature Polish & SMS Integration
+**Current Phase:** UI Polish & Feature Enhancement
 
 ---
 
@@ -15,6 +15,9 @@
 - [ ] Stay within Firebase free tier limits
 
 ### **Secondary Goals**
+- [x] **UI improvements for Jobs List** ✅
+- [ ] Job details modal enhancement
+- [ ] Admin button workflow improvements
 - [ ] Data validation and warnings
 - [ ] Job cost analysis (profit margins)
 - [ ] Improved prevailing wage display
@@ -31,6 +34,16 @@
 - ✅ Rate card system
 - ✅ Time entry system
 - ✅ Authentication and permissions
+
+### **UI/UX Improvements**
+- ✅ **Compact Jobs List View (March 31, 2026)**
+  - Thinner section headers (62% reduction in padding)
+  - Thinner date headers (33% reduction in padding)
+  - Compact job rows (20% reduction in padding)
+  - Reordered columns: Flaggers → Length → Time → Meet/Set → Billing → Caller → Location → Sign Carrier(s) → Buttons
+  - Two-row button layout: [Assign, Dispatch, Edit] | [Continue, Return, Finish]
+  - Sign carriers display with equipment: "FirstName L - signs,extraSigns,X cones"
+  - Result: 30-40% more jobs visible on screen
 
 ### **Payroll System**
 - ✅ Regular/OT/holiday hour calculations
@@ -63,7 +76,15 @@
 
 ## 🚧 IN PROGRESS
 
-### **Priority 1: SMS Dispatch Integration**
+### **Priority 1: Job Details & Admin Button Enhancement**
+**Status:** Next up after UI improvements  
+**Components to Modify:**
+- [ ] JobDetailsModal.jsx - improve layout and information display
+- [ ] All admin modals (Continue, Return, Finish) - enhance workflows
+- [ ] Add confirmation dialogs where appropriate
+- [ ] Improve status indicators
+
+### **Priority 2: SMS Dispatch Integration**
 **Status:** Design complete, implementation pending  
 **Dependencies:** ClickSend account setup  
 
@@ -109,7 +130,7 @@ jobs collection:
 
 ## 📋 BACKLOG
 
-### **Priority 2: Export Formatting**
+### **Priority 3: Export Formatting**
 **Status:** Pending user requirements  
 
 - [ ] **F4: Payroll CSV for Paychex**
@@ -129,7 +150,7 @@ jobs collection:
 
 ---
 
-### **Priority 3: Data Validation**
+### **Priority 4: Data Validation**
 **Status:** Not started  
 
 - [ ] **F7a: Hour validation**
@@ -149,7 +170,7 @@ jobs collection:
 
 ---
 
-### **Priority 4: Display Improvements**
+### **Priority 5: Display Improvements**
 **Status:** Not started  
 
 - [ ] **F6: Prevailing Wage Display**
@@ -202,7 +223,7 @@ jobs collection:
 ### **From Users**
 *Track user-requested features here*
 
-- [ ] Request 1: [Description] - Requested by [Name] on [Date]
+- [x] Compact jobs list view with more visible jobs - **Completed March 31, 2026**
 - [ ] Request 2: [Description] - Requested by [Name] on [Date]
 
 ### **From System Testing**
@@ -225,6 +246,7 @@ jobs collection:
 ### **Performance**
 - [ ] Optimize Firestore queries (currently batching reads well)
 - [ ] Add caching for rate cards (frequently accessed)
+- [ ] **Cache employee data in JobsList** (currently fetches per row)
 - [ ] Lazy load modal components
 - [ ] Optimize re-renders in lists
 
@@ -301,6 +323,13 @@ Example:
 ### **Regression Test Suite**
 Run these tests before any deployment:
 
+**UI/Display Tests:**
+- [x] UI1: Jobs list shows thinner headers
+- [x] UI2: Column order correct (Flaggers → ... → Buttons)
+- [x] UI3: Sign carriers show equipment format: "Name L - signs,extras,X cones"
+- [x] UI4: Buttons in two rows with correct colors
+- [ ] UI5: Job details modal displays all information
+
 **Payroll Tests:**
 - [ ] P1: Regular day (8 hrs, no OT)
 - [ ] P2: Hour-based OT (10 hrs = 8 reg + 2 OT)
@@ -335,9 +364,10 @@ Based on typical daily usage:
 **Reads:**
 - Job list loads: ~50 jobs × 10 views/day = 500 reads
 - Employee list loads: ~30 employees × 5 views/day = 150 reads
+- **Sign carrier equipment loads: ~20 jobs × 1 read = 20 reads** (NEW)
 - Rate card loads: ~10 rates × 20 views/day = 200 reads
 - Report generation: ~100 jobs × 2 reports/day = 200 reads
-**Daily Total: ~1,050 reads (2% of limit)**
+**Daily Total: ~1,070 reads (2.1% of limit)**
 
 **Writes:**
 - New jobs: ~5 jobs/day = 5 writes
@@ -349,11 +379,22 @@ Based on typical daily usage:
 **Safety Margin: Excellent** ✅  
 Well within free tier limits with room for 10× growth
 
+**Optimization Opportunity:**
+- Could cache employee data at parent level to eliminate per-row reads
+
 ---
 
 ## 🗓️ CHANGELOG
 
 ### **March 31, 2026**
+- ✅ **UI Improvements: Compact Jobs List View**
+  - Reduced section header padding by 62% (16px→6px)
+  - Reduced date header padding by 33% (12px→8px)
+  - Reduced job row padding by 20% (10px→8px)
+  - Reordered columns for better workflow
+  - Added two-row button layout
+  - Sign carriers now show equipment details
+  - Result: 30-40% more jobs visible on screen
 - ✅ Fixed invoicing travel calculation (per-flagger instead of summed)
 - ✅ Fixed multi-job conflict detection (now checks individual jobs)
 - ✅ Fixed conflict modal to show all dates in one window
@@ -361,6 +402,7 @@ Well within free tier limits with room for 10× growth
 - ✅ Removed duplicate isEPUD declarations
 - ✅ Created system overview documentation
 - ✅ Created master tracking document
+- ✅ Updated project instructions with FILE_INDEX.md workflow
 
 ### **March 30, 2026**
 - ✅ Added employee management fields (full set)
@@ -391,28 +433,32 @@ Well within free tier limits with room for 10× growth
 - **ClickSend Dashboard:** https://dashboard.clicksend.com (pending setup)
 
 ### **Documentation**
-- Project Context: `/mnt/project/westates_project_context.docx`
+- File Index: `FILE_INDEX.md`
 - System Overview: `WESTATES_SYSTEM_OVERVIEW.md`
 - This Document: `WESTATES_MASTER_TRACKING.md`
+- Project Instructions: `WESTATES_PROJECT_INSTRUCTIONS.md`
 
 ---
 
 ## 🎬 NEXT STEPS
 
 ### **Immediate (This Week)**
+1. [x] Complete Jobs List UI improvements
+2. [ ] Enhance Job Details Modal
+3. [ ] Improve admin button workflows
+4. [ ] Test all UI changes with real data
+
+### **Short Term (Next 2 Weeks)**
 1. [ ] Decide on SMS dispatch implementation timeline
 2. [ ] Get ClickSend account credentials
 3. [ ] Determine CSV export format requirements
-
-### **Short Term (Next 2 Weeks)**
-1. [ ] Implement SMS dispatch system
-2. [ ] Update CSV exports for Paychex/QuickBooks
-3. [ ] Add basic data validation
+4. [ ] Add basic data validation
 
 ### **Medium Term (Next Month)**
-1. [ ] Job cost analysis feature
-2. [ ] Prevailing wage display improvements
-3. [ ] Comprehensive testing with real data
+1. [ ] Implement SMS dispatch system
+2. [ ] Update CSV exports for Paychex/QuickBooks
+3. [ ] Job cost analysis feature
+4. [ ] Prevailing wage display improvements
 
 ### **Long Term (Next Quarter)**
 1. [ ] Mobile optimization
@@ -429,6 +475,7 @@ Well within free tier limits with room for 10× growth
 - ⚠️ Always combine writes - one updateJob() call, not multiple
 - ⚠️ Use custom: {} for flexible fields - don't add schema fields
 - ⚠️ Travel/mileage calculated PER FLAGGER in invoicing
+- ⚠️ **ALWAYS use FILE_INDEX.md to locate component files**
 
 ### **Deployment Checklist**
 Before deploying any changes:
