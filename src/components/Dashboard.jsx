@@ -14,6 +14,7 @@ import TimeEntryView from './TimeEntryView';
 import PayrollReportView from './PayrollReportView';
 import InvoicingReportView from './InvoicingReportView';
 import SettingsView from './SettingsView';
+import FirebaseUsageTracker from './FirebaseUsageTracker';
 
 function Dashboard({ user, permissions }) {
   const [activeTab, setActiveTab] = useState('jobs');
@@ -37,7 +38,10 @@ function Dashboard({ user, permissions }) {
     <div className="dashboard">
       <header className="header">
         <div className="header-content">
-          <h1>West States Job Manager</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+            <h1>Westates Job Manager</h1>
+            <FirebaseUsageTracker />
+          </div>
           <div className="user-info">
             <span className="user-email">{user.email}</span>
             <button onClick={handleSignOut} className="btn btn-secondary">
