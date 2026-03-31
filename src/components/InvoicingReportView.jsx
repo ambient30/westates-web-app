@@ -214,17 +214,16 @@ function InvoicingReportView({ permissions }) {
         jobTotalBilling += flaggerBilling;
       });
 
-      // Add travel billing - calculate PER FLAGGER
+      // Add travel billing - calculate PER FLAGGER, not summed
       let travelBilling = 0;
       let mileageBilling = 0;
-
 
       if (isPrevailingWage) {
         // Prevailing wage: NO travel time or mileage billed
         travelBilling = 0;
         mileageBilling = 0;
       } else {
-        // Calculate travel and mileage for EACH flagger
+        // Calculate travel and mileage for EACH flagger separately
         Object.values(job.actualHours || {}).forEach(flaggerData => {
           const flaggerTravelMinutes = parseFloat(flaggerData.actualTravelTime || 0);
           const flaggerTravelMiles = parseFloat(flaggerData.actualTravelMiles || 0);
