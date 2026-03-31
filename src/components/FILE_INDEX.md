@@ -12,6 +12,7 @@ Direct links to raw source files for easy access:
 - [firebase.js] (https://raw.githubusercontent.com/ambient30/westates-web-app/refs/heads/main/src/firebase.js)
 - [main.jsx] (https://raw.githubusercontent.com/ambient30/westates-web-app/refs/heads/main/src/main.jsx)
 - [styles.css] (https://raw.githubusercontent.com/ambient30/westates-web-app/refs/heads/main/src/styles.css)
+- [FirebaseUsageTracker.jsx] (https://raw.githubusercontent.com/ambient30/westates-web-app/refs/heads/main/src/components/FirebaseUsageTracker.jsx)
 
 ## Job Management
 - [ContinueJobModal.jsx] (https://raw.githubusercontent.com/ambient30/westates-web-app/refs/heads/main/src/components/ContinueJobModal.jsx)
@@ -53,3 +54,6 @@ Direct links to raw source files for easy access:
 - [UserManager.jsx] (https://raw.githubusercontent.com/ambient30/westates-web-app/refs/heads/main/src/components/UserManager.jsx)
 - [auditLog.js] (https://raw.githubusercontent.com/ambient30/westates-web-app/refs/heads/main/src/utils/auditLog.js)
 - [permissions.js] https://raw.githubusercontent.com/ambient30/westates-web-app/refs/heads/main/src/utils/permissions.js)
+- [WESTATES_MASTER_TRACKING.md] (https://raw.githubusercontent.com/ambient30/westates-web-app/refs/heads/main/src/components/WESTATES_MASTER_TRACKING.md)
+- [WESTATES_PROJECT_INSTRUCTIONS.md] (https://raw.githubusercontent.com/ambient30/westates-web-app/refs/heads/main/src/components/WESTATES_PROJECT_INSTRUCTIONS.md)
+- [WESTATES_SYSTEM_OVERVIEW.md] (https://raw.githubusercontent.com/ambient30/westates-web-app/refs/heads/main/src/components/WESTATES_SYSTEM_OVERVIEW.md)
