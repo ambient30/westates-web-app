@@ -1,4 +1,4 @@
-# WEST STATES WEB APP - MASTER TRACKING DOCUMENT
+# WESTATES FLAGMAN WEB APP - MASTER TRACKING DOCUMENT
 
 **Last Updated:** March 31, 2026  
 **Project Status:** Active Development  

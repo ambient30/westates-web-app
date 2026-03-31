@@ -1,4 +1,4 @@
-# WEST STATES WEB APP - SYSTEM OVERVIEW
+# WESTATES FLAGMAN WEB APP - SYSTEM OVERVIEW
 
 **Last Updated:** March 31, 2026  
 **GitHub:** https://github.com/ambient30/westates-web-app  
@@ -22,7 +22,7 @@
 
 ## SYSTEM PURPOSE
 
-West States is a **flagging company management system** for traffic control operations. It manages:
+Westates Flagman is a **flagging company management system** for traffic control operations. It manages:
 - Job scheduling and dispatch
 - Employee and contractor management
 - Time tracking
@@ -323,7 +323,7 @@ App.jsx
 ```javascript
 {
   global: {
-    companyName: "West States Flagging",
+    companyName: "Westates Flagman",
     timezone: "America/Los_Angeles",
     defaultStipend: 25,
     // Future: ClickSend credentials will go here
