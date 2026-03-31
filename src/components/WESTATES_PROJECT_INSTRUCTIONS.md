@@ -8,18 +8,67 @@
 
 ---
 
+## ⚠️ CRITICAL: ALWAYS USE FILE_INDEX.md FIRST
+
+**BEFORE ACCESSING ANY COMPONENT FILE:**
+
+1. **FILE_INDEX.md URL:**  
+   ```
+   https://raw.githubusercontent.com/ambient30/westates-web-app/refs/heads/main/src/components/FILE_INDEX.md
+   ```
+
+2. **What it contains:**  
+   - Direct raw GitHub URLs for EVERY component file
+   - Organized by category (Core, Jobs, Employees, Reports, etc.)
+   - Always up-to-date list of all files
+
+3. **How to use it:**  
+   - FIRST: Fetch FILE_INDEX.md
+   - FIND: The component you need from the list
+   - FETCH: Use the exact raw URL provided in FILE_INDEX.md
+   - NEVER: Try to construct URLs manually or guess file locations
+
+**Example Workflow:**
+```
+User asks: "Update JobCard.jsx"
+
+Step 1: Fetch FILE_INDEX.md
+Step 2: Find "JobCard.jsx" in the list
+Step 3: Copy the URL: https://raw.githubusercontent.com/.../JobCard.jsx
+Step 4: Fetch that exact URL
+Step 5: Make your changes
+```
+
+**DO NOT:**
+- ❌ Try to fetch files without checking FILE_INDEX.md first
+- ❌ Assume you know where files are located
+- ❌ Use web_search to find files
+- ❌ Construct GitHub URLs manually
+
+**ALWAYS:**
+- ✅ Fetch FILE_INDEX.md at the start of every task
+- ✅ Use the exact URLs provided in FILE_INDEX.md
+- ✅ Verify the file exists in FILE_INDEX.md before fetching
+
+---
+
 ## 📚 DOCUMENTATION STRUCTURE
 
 ### **Primary Documentation Files**
 
 Before starting any work, **ALWAYS** review these documentation files:
 
-1. **System Overview** (Technical Reference)
+1. **File Index** (Component Locations)
+   - **URL:** https://raw.githubusercontent.com/ambient30/westates-web-app/refs/heads/main/src/components/FILE_INDEX.md
+   - **Contains:** Direct raw URLs for all component files
+   - **Use for:** Finding the exact location of any component file
+
+2. **System Overview** (Technical Reference)
    - **URL:** https://raw.githubusercontent.com/ambient30/westates-web-app/refs/heads/main/src/components/WESTATES_SYSTEM_OVERVIEW.md
    - **Contains:** Complete system breakdown, data structures, business logic, workflows
    - **Use for:** Understanding how the system works, calculation rules, component architecture
 
-2. **Master Tracking Document** (Project Management)
+3. **Master Tracking Document** (Project Management)
    - **URL:** https://raw.githubusercontent.com/ambient30/westates-web-app/refs/heads/main/src/components/WESTATES_MASTER_TRACKING.md
    - **Contains:** Goals, completed features, in-progress work, backlog, bugs, changelog
    - **Use for:** Tracking project status, prioritization, bug tracking, feature requests
@@ -141,32 +190,6 @@ updateJobByID('JOB1', {custom});   // write 3
 
 ---
 
-## 📋 COMPONENT FILE STRUCTURE
-
-**GitHub Base URL:**
-```
-https://raw.githubusercontent.com/ambient30/westates-web-app/refs/heads/main/src/components/
-```
-
-| Category | Files | Purpose |
-|----------|-------|---------|
-| Core | App.jsx · Dashboard.jsx · firebase.js | App root, main dashboard, Firebase init |
-| Core | JobsList.jsx · JobCard.jsx | Jobs list view + individual job cards |
-| Core | EmployeesList.jsx · ContractorsList.jsx | People management views |
-| Jobs | CreateJobModal · EditJobModal · JobDetailsModal | CRUD for job records |
-| Jobs | ContinueJobModal · FinishJobModal · ReturnJobModal | Job lifecycle state transitions |
-| People | CreateEmployeeModal · EditEmployeeModal | Employee CRUD |
-| People | AssignEmployeesModal · DispatchFlaggersModal | Dispatch & assignment workflows |
-| People | CreateContractorModal · EditContractorModal | Contractor CRUD |
-| Reports | PayrollReportView.jsx · InvoicingReportView.jsx | Payroll and billing reports |
-| Reports | TimeEntryView.jsx · PinksView.jsx | Time tracking, pinks summary |
-| Reports | RatesManager.jsx · AvailabilityView.jsx | Rate card management, availability calendar |
-| Utils | Login · RoleManager · UserManager · PendingApproval | Auth & access control |
-| Utils | auditLog.js · permissions.js · FirstTimeSetup.jsx | Audit trail, permissions, initial setup |
-| Modals | DailyMinimumModal.jsx | Multi-job daily minimum conflict resolution |
-
----
-
 ## 🎯 FLEXIBLE CUSTOM FIELDS PATTERN
 
 **Core principle:** Never add schema fields for one-off needs. Everything goes into `custom: {}`.
@@ -224,18 +247,20 @@ const billFull = jobRate.custom?.billFullRoundtrip ?? false;
 
 **Before starting any work:**
 
-1. ✅ Fetch **WESTATES_MASTER_TRACKING.md** to see current status
-2. ✅ Fetch **WESTATES_SYSTEM_OVERVIEW.md** for system understanding
-3. ✅ Review "In Progress" and "Backlog" sections
-4. ✅ Fetch specific component(s) being modified from GitHub
-5. ✅ Confirm Firestore collection structure hasn't changed
-6. ✅ If bulk operation: ask user to check Firebase Console for current usage
+1. ✅ Fetch **FILE_INDEX.md** to locate all component files
+2. ✅ Fetch **WESTATES_MASTER_TRACKING.md** to see current status
+3. ✅ Fetch **WESTATES_SYSTEM_OVERVIEW.md** for system understanding
+4. ✅ Review "In Progress" and "Backlog" sections
+5. ✅ Use FILE_INDEX.md to find and fetch specific component(s) being modified
+6. ✅ Confirm Firestore collection structure hasn't changed
+7. ✅ If bulk operation: ask user to check Firebase Console for current usage
 
 ### **PER-TASK WORKFLOW**
 
 | Step | Name | Action |
 |------|------|--------|
-| 1 | Verify | Fetch the relevant file(s) from GitHub. List every function. Quote actual code. |
+| 0 | **Locate** | **Use FILE_INDEX.md to find exact file URLs** |
+| 1 | Verify | Fetch the relevant file(s) using URLs from FILE_INDEX.md. List every function. Quote actual code. |
 | 2 | Scope | Identify all functions that touch the data or UI being changed. |
 | 3 | Op Count | Calculate Firestore reads + writes before writing any code. |
 | 4 | Design | Batch reads → cache → filter in memory → single update. Use custom: {} for new params. |
@@ -318,6 +343,7 @@ Total: $80 (NOT $120 from summing 240 min first)
 
 | ✅ | DO |
 |----|-----|
+| ✅ | **ALWAYS fetch FILE_INDEX.md FIRST to locate component files** |
 | ✅ | Always verify against GitHub — never hallucinate function names or signatures |
 | ✅ | Batch reads — getAllJobs() once, then filter/process in memory |
 | ✅ | Cache when appropriate — reuse data within same execution context (< 1 min) |
@@ -330,6 +356,9 @@ Total: $80 (NOT $120 from summing 240 min first)
 
 | 🚫 | NEVER |
 |----|-------|
+| 🚫 | **NEVER try to fetch files without checking FILE_INDEX.md first** |
+| 🚫 | **NEVER construct GitHub URLs manually - use FILE_INDEX.md** |
+| 🚫 | **NEVER use web_search to find component files** |
 | 🚫 | NEVER enable Firebase billing — stay on Spark (free) plan |
 | 🚫 | NEVER call getJobByID() inside a loop when you already have the data |
 | 🚫 | NEVER issue multiple updateJobByID() calls where one would do |
@@ -345,7 +374,10 @@ Total: $80 (NOT $120 from summing 240 min first)
 ```
 TASK: [Short title]
 COMPONENT(S): [e.g. JobCard.jsx, EditJobModal.jsx]
-GITHUB URL(s): [paste raw GitHub URL(s)]
+
+STEP 1: Fetch FILE_INDEX.md
+STEP 2: Find component URLs in FILE_INDEX.md
+STEP 3: Fetch components using exact URLs from FILE_INDEX.md
 
 WHAT I WANT:
   [Clear description of the feature / change]
@@ -361,6 +393,7 @@ DO NOT:
   - Add schema fields (use custom: {} instead)
   - Re-read docs you already fetched
   - Split into multiple writes what can be one
+  - Fetch files without checking FILE_INDEX.md
 
 DELIVER:
   Full functions, op count, caching strategy, change log, 
@@ -372,7 +405,10 @@ DELIVER:
 ```
 BUG: [Short title]
 COMPONENT: [FileName.jsx]
-GITHUB URL: [raw URL]
+
+STEP 1: Fetch FILE_INDEX.md
+STEP 2: Find component URL in FILE_INDEX.md
+STEP 3: Fetch component using exact URL
 
 STEPS TO REPRODUCE:
   1. [Step 1]
@@ -393,7 +429,10 @@ DELIVER:
 
 ```
 TASK: Fix / modify billing logic in [Component]
-GITHUB URL: [raw URL]
+
+STEP 1: Fetch FILE_INDEX.md
+STEP 2: Find component URL
+STEP 3: Fetch component
 
 CURRENT BEHAVIOR:
   [Describe what it does now]
@@ -447,18 +486,20 @@ Before marking any feature complete:
 User Request: "Add weather conditions field to jobs"
 
 Your Workflow:
-1. Fetch WESTATES_MASTER_TRACKING.md
-2. Fetch WESTATES_SYSTEM_OVERVIEW.md
-3. Fetch EditJobModal.jsx from GitHub
-4. Design: Add custom.weatherConditions field
-5. Implement: Update modal with new field
-6. Test: Create/edit jobs with weather data
-7. Update MASTER_TRACKING.md:
+1. Fetch FILE_INDEX.md
+2. Fetch WESTATES_MASTER_TRACKING.md
+3. Fetch WESTATES_SYSTEM_OVERVIEW.md
+4. Find EditJobModal.jsx in FILE_INDEX.md
+5. Fetch EditJobModal.jsx using URL from FILE_INDEX.md
+6. Design: Add custom.weatherConditions field
+7. Implement: Update modal with new field
+8. Test: Create/edit jobs with weather data
+9. Update MASTER_TRACKING.md:
    - Add to "Completed Features"
    - Add changelog entry
-8. Update SYSTEM_OVERVIEW.md:
+10. Update SYSTEM_OVERVIEW.md:
    - Add to custom fields examples
-9. Provide both updated documentation files
+11. Provide both updated documentation files
 ```
 
 ### **Example 2: Fixing a Bug**
@@ -467,17 +508,19 @@ Your Workflow:
 User Report: "Multi-job conflicts only showing one date"
 
 Your Workflow:
-1. Fetch WESTATES_MASTER_TRACKING.md (check Known Issues)
-2. Fetch PayrollReportView.jsx from GitHub
-3. Identify root cause
-4. Fix the bug
-5. Test with multiple dates
-6. Update MASTER_TRACKING.md:
+1. Fetch FILE_INDEX.md
+2. Fetch WESTATES_MASTER_TRACKING.md (check Known Issues)
+3. Find PayrollReportView.jsx in FILE_INDEX.md
+4. Fetch PayrollReportView.jsx using URL from FILE_INDEX.md
+5. Identify root cause
+6. Fix the bug
+7. Test with multiple dates
+8. Update MASTER_TRACKING.md:
    - Remove from "Known Issues"
    - Add to "Completed Features" under bug fixes
    - Add changelog entry
-7. No SYSTEM_OVERVIEW.md changes needed (logic unchanged)
-8. Provide updated MASTER_TRACKING.md
+9. No SYSTEM_OVERVIEW.md changes needed (logic unchanged)
+10. Provide updated MASTER_TRACKING.md
 ```
 
 ---
@@ -494,20 +537,24 @@ All dates and times use **America/Los_Angeles** timezone.
 ### **Documentation Priority**
 Keeping documentation current is **CRITICAL**. Out-of-date docs are worse than no docs.
 
+### **File Location Priority**
+ALWAYS use FILE_INDEX.md to locate files. NEVER try to guess or construct URLs manually.
+
 ---
 
 ## 🚀 READY TO START
 
 **Before beginning any task:**
-1. Read the task request carefully
-2. Fetch both documentation files
+1. **Fetch FILE_INDEX.md** to locate all files
+2. Fetch both documentation files (MASTER_TRACKING.md, SYSTEM_OVERVIEW.md)
 3. Review relevant sections
-4. Fetch component files from GitHub
-5. Design solution with Firestore optimization in mind
-6. Implement with all 8 deliverables
-7. **Update documentation files**
-8. Provide complete updated docs with change summary
+4. **Use FILE_INDEX.md to find component files**
+5. Fetch component files using exact URLs from FILE_INDEX.md
+6. Design solution with Firestore optimization in mind
+7. Implement with all 8 deliverables
+8. **Update documentation files**
+9. Provide complete updated docs with change summary
 
 ---
 
-**Westates Flagman Web App** · Claude Project Instructions · **Keep Documentation Current**
+**Westates Flagman Web App** · Claude Project Instructions · **Always Use FILE_INDEX.md First**
