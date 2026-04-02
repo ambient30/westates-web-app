@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { collection, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import { hasPermission } from '../utils/permissions';
+import { logFirestoreOperation } from '../utils/firebaseUsageLogger';
 import EditJobModal from './EditJobModal';
 import AssignEmployeesModal from './AssignEmployeesModal';
 import JobDetailsModal from './JobDetailsModal';
@@ -33,6 +34,10 @@ function JobsList({ permissions }) {
     try {
       setLoading(true);
       const querySnapshot = await getDocs(collection(db, 'jobs'));
+      
+      // LOG THE READS
+      await logFirestoreOperation('reads', querySnapshot.docs.length);
+      
       const jobsData = querySnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
@@ -308,15 +313,15 @@ function WeekSection({ title, jobs, color, canUpdate, onEdit, onAssign, onViewDe
   });
 
   return (
-    <div style={{ marginBottom: '20px' }}>
-      {/* Thinner section header */}
+    <div style={{ marginBottom: '32px' }}>
+      {/* UPDATED: Full-width color bar */}
       <div style={{ 
         background: color,
-        padding: '6px 12px',
-        borderRadius: '4px',
-        marginBottom: '8px'
+        padding: '16px 20px',
+        borderRadius: '8px',
+        marginBottom: '16px'
       }}>
-        <h3 style={{ fontSize: '13px', fontWeight: '600', color: 'white', margin: 0 }}>
+        <h3 style={{ fontSize: '18px', fontWeight: '500', color: 'white', margin: 0 }}>
           {title}
         </h3>
       </div>
@@ -351,20 +356,19 @@ function DateGroup({ date, jobs, canUpdate, onEdit, onAssign, onViewDetails, onD
   };
 
   return (
-    <div style={{ marginBottom: '16px' }}>
+    <div style={{ marginBottom: '24px' }}>
       <div style={{
         background: 'white',
-        borderRadius: '6px',
+        borderRadius: '8px',
         overflow: 'hidden',
         border: '1px solid #e0e0e0'
       }}>
-        {/* Thinner date header */}
         <div style={{
           background: '#f8f9fa',
-          padding: '8px 12px',
+          padding: '12px 16px',
           borderBottom: '1px solid #e0e0e0',
           fontWeight: '600',
-          fontSize: '13px',
+          fontSize: '14px',
           color: '#5f6368'
         }}>
           {formatDate(date)}
@@ -402,6 +406,10 @@ function JobRow({ job, canUpdate, onEdit, onAssign, onViewDetails, onDispatch, o
     try {
       const carriers = job.equipmentCarrier.split(',').map(name => name.trim());
       const employeesSnap = await getDocs(collection(db, 'employees'));
+      
+      // LOG THE EMPLOYEE READS
+      await logFirestoreOperation('reads', employeesSnap.docs.length);
+      
       const employees = employeesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       
       const carrierData = carriers.map(carrierName => {
@@ -425,9 +433,8 @@ function JobRow({ job, canUpdate, onEdit, onAssign, onViewDetails, onDispatch, o
   const amountOfFlaggers = parseInt(job.amountOfFlaggers) || 0;
   const placeholdersNeeded = Math.max(0, amountOfFlaggers - assignedFlaggers.length);
 
-  const formatSignCarriers = () => {
-    if (!job.equipmentCarrier) return '-';
-    if (employeeData.length === 0) return job.equipmentCarrier; // Show names while loading
+  const formatEquipmentCarrier = () => {
+    if (employeeData.length === 0) return '-';
     
     return employeeData.map(emp => {
       const parts = [];
@@ -442,7 +449,7 @@ function JobRow({ job, canUpdate, onEdit, onAssign, onViewDetails, onDispatch, o
       const formattedName = lastInitial ? `${firstName} ${lastInitial}` : firstName;
       
       if (parts.length > 0) {
-        return `${formattedName} - ${parts.join(',')}`;
+        return `${formattedName} - ${parts.join(', ')}`;
       } else {
         return `${formattedName} - No equipment`;
       }
@@ -459,20 +466,9 @@ function JobRow({ job, canUpdate, onEdit, onAssign, onViewDetails, onDispatch, o
     <div 
       className="job-row"
       onClick={handleRowClick}
-      style={{
-        display: 'flex',
-        alignItems: 'flex-start',
-        gap: '12px',
-        padding: '8px 12px',
-        borderBottom: '1px solid #e0e0e0',
-        fontSize: '13px',
-        cursor: 'pointer',
-        transition: 'all 0.2s ease'
-      }}
     >
-      {/* 1. Flaggers - FIRST */}
-      <div style={{ flex: '0 0 160px', minWidth: '160px' }}>
-        <div style={{ fontWeight: '600', fontSize: '11px', color: '#5f6368', marginBottom: '2px' }}>
+      <div style={{ flex: '0 0 180px', minWidth: '180px' }}>
+        <div style={{ fontWeight: '600', fontSize: '12px', color: '#5f6368', marginBottom: '4px' }}>
           Flaggers
         </div>
         {assignedFlaggers.map((flagger, idx) => {
@@ -483,8 +479,7 @@ function JobRow({ job, canUpdate, onEdit, onAssign, onViewDetails, onDispatch, o
               style={{ 
                 color: isDispatched ? '#202124' : '#d32f2f',
                 fontWeight: isDispatched ? '400' : '600',
-                lineHeight: '1.3',
-                fontSize: '12px'
+                lineHeight: '1.4'
               }}
             >
               {flagger}
@@ -497,150 +492,117 @@ function JobRow({ job, canUpdate, onEdit, onAssign, onViewDetails, onDispatch, o
             style={{ 
               color: '#9e9e9e',
               fontStyle: 'italic',
-              lineHeight: '1.3',
-              fontSize: '12px'
+              lineHeight: '1.4'
             }}
           >
             [Unassigned]
           </div>
         ))}
         {assignedFlaggers.length === 0 && amountOfFlaggers === 0 && (
-          <div style={{ color: '#d32f2f', fontStyle: 'italic', fontSize: '12px' }}>
-            No flaggers
+          <div style={{ color: '#d32f2f', fontStyle: 'italic' }}>
+            No flaggers needed
           </div>
         )}
       </div>
 
-      {/* 2. Job Length */}
-      <div style={{ flex: '0 0 70px' }}>
-        <div style={{ fontWeight: '600', fontSize: '11px', color: '#5f6368', marginBottom: '2px' }}>
+      <div style={{ flex: '0 0 80px' }}>
+        <div style={{ fontWeight: '600', fontSize: '12px', color: '#5f6368', marginBottom: '4px' }}>
           Length
         </div>
-        <div style={{ fontSize: '12px' }}>{job.jobLength || '-'}</div>
+        <div>{job.jobLength || '-'}</div>
       </div>
 
-      {/* 3. Time */}
-      <div style={{ flex: '0 0 70px' }}>
-        <div style={{ fontWeight: '600', fontSize: '11px', color: '#5f6368', marginBottom: '2px' }}>
+      <div style={{ flex: '0 0 80px' }}>
+        <div style={{ fontWeight: '600', fontSize: '12px', color: '#5f6368', marginBottom: '4px' }}>
           Time
         </div>
-        <div style={{ fontSize: '12px' }}>{job.initialJobTime || 'TBD'}</div>
+        <div>{job.initialJobTime || 'TBD'}</div>
       </div>
 
-      {/* 4. Meet/Set */}
-      <div style={{ flex: '0 0 80px' }}>
-        <div style={{ fontWeight: '600', fontSize: '11px', color: '#5f6368', marginBottom: '2px' }}>
-          Meet/Set
-        </div>
-        <div style={{ fontSize: '12px' }}>{job.meetSet || '-'}</div>
-      </div>
-
-      {/* 5. Billing */}
-      <div style={{ flex: '0 0 100px' }}>
-        <div style={{ fontWeight: '600', fontSize: '11px', color: '#5f6368', marginBottom: '2px' }}>
+      <div style={{ flex: '0 0 120px' }}>
+        <div style={{ fontWeight: '600', fontSize: '12px', color: '#5f6368', marginBottom: '4px' }}>
           Billing
         </div>
-        <div style={{ fontSize: '12px' }}>{job.billing || '-'}</div>
+        <div>{job.billing || '-'}</div>
       </div>
 
-      {/* 6. Caller */}
-      <div style={{ flex: '0 0 100px' }}>
-        <div style={{ fontWeight: '600', fontSize: '11px', color: '#5f6368', marginBottom: '2px' }}>
-          Caller
-        </div>
-        <div style={{ fontSize: '12px' }}>{job.caller || '-'}</div>
-      </div>
-
-      {/* 7. Location */}
-      <div style={{ flex: '1 1 150px', minWidth: '120px' }}>
-        <div style={{ fontWeight: '600', fontSize: '11px', color: '#5f6368', marginBottom: '2px' }}>
+      <div style={{ flex: '1 1 200px', minWidth: '150px' }}>
+        <div style={{ fontWeight: '600', fontSize: '12px', color: '#5f6368', marginBottom: '4px' }}>
           Location
         </div>
-        <div style={{ fontSize: '12px' }}>{job.location || '-'}</div>
+        <div>{job.location || '-'}</div>
       </div>
 
-      {/* 8. Sign Carriers */}
-      <div style={{ flex: '0 0 140px', minWidth: '120px' }}>
-        <div style={{ fontWeight: '600', fontSize: '11px', color: '#5f6368', marginBottom: '2px' }}>
-          Sign Carrier(s)
+      <div style={{ flex: '1 1 200px', minWidth: '150px' }}>
+        <div style={{ fontWeight: '600', fontSize: '12px', color: '#5f6368', marginBottom: '4px' }}>
+          Equipment
         </div>
-        <div style={{ fontSize: '11px', whiteSpace: 'pre-line', lineHeight: '1.4' }}>
-          {formatSignCarriers()}
+        <div style={{ fontSize: '13px', whiteSpace: 'pre-line' }}>
+          {formatEquipmentCarrier()}
         </div>
       </div>
 
-      {/* 9. Admin Buttons - LAST - Two rows */}
       {canUpdate && (
-        <div style={{ flex: '0 0 220px', display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-end' }}>
-          {/* First row: Assign, Dispatch, Edit */}
-          <div style={{ display: 'flex', gap: '4px' }}>
-            <button 
-              onClick={(e) => {
-                e.stopPropagation();
-                onAssign(job);
-              }}
-              className="btn btn-secondary btn-small"
-              style={{ padding: '4px 12px', fontSize: '12px' }}
-            >
-              Assign
-            </button>
-            <button 
-              onClick={(e) => {
-                e.stopPropagation();
-                onDispatch(job);
-              }}
-              className="btn btn-secondary btn-small"
-              style={{ padding: '4px 12px', fontSize: '12px' }}
-            >
-              Dispatch
-            </button>
-            <button 
-              onClick={(e) => {
-                e.stopPropagation();
-                onEdit(job);
-              }}
-              className="btn btn-secondary btn-small"
-              style={{ padding: '4px 12px', fontSize: '12px' }}
-            >
-              Edit
-            </button>
-          </div>
-          
-          {/* Second row: Continue, Return, Finish */}
-          <div style={{ display: 'flex', gap: '4px' }}>
-            <button 
-              onClick={(e) => {
-                e.stopPropagation();
-                onContinue(job);
-              }}
-              className="btn btn-secondary btn-small"
-              style={{ background: '#4caf50', color: 'white', padding: '4px 12px', fontSize: '12px' }}
-            >
-              Continue
-            </button>
-            <button 
-              onClick={(e) => {
-                e.stopPropagation();
-                onReturn(job);
-              }}
-              className="btn btn-secondary btn-small"
-              style={{ background: '#ff9800', color: 'white', padding: '4px 12px', fontSize: '12px' }}
-            >
-              Return
-            </button>
-            <button 
-              onClick={(e) => {
-                e.stopPropagation();
-                onFinish(job);
-              }}
-              className="btn btn-secondary btn-small"
-              style={{ background: '#d32f2f', color: 'white', padding: '4px 12px', fontSize: '12px' }}
-            >
-              Finish
-            </button>
-          </div>
-        </div>
-      )}
+  <div style={{ flex: '0 0 420px', display: 'flex', gap: '4px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+    <button 
+      onClick={(e) => {
+        e.stopPropagation();
+        onFinish(job);
+      }}
+      className="btn btn-secondary btn-small"
+      style={{ background: '#d32f2f', color: 'white' }}
+    >
+      Finish
+    </button>
+    <button 
+      onClick={(e) => {
+        e.stopPropagation();
+        onReturn(job);
+      }}
+      className="btn btn-secondary btn-small"
+      style={{ background: '#ff9800', color: 'white' }}
+    >
+      Return
+    </button>
+    <button 
+      onClick={(e) => {
+        e.stopPropagation();
+        onContinue(job);
+      }}
+      className="btn btn-secondary btn-small"
+      style={{ background: '#4caf50', color: 'white' }}
+    >
+      Continue
+    </button>
+    <button 
+      onClick={(e) => {
+        e.stopPropagation();
+        onDispatch(job);
+      }}
+      className="btn btn-secondary btn-small"
+    >
+      Dispatch
+    </button>
+    <button 
+      onClick={(e) => {
+        e.stopPropagation();
+        onAssign(job);
+      }}
+      className="btn btn-secondary btn-small"
+    >
+      Assign
+    </button>
+    <button 
+      onClick={(e) => {
+        e.stopPropagation();
+        onEdit(job);
+      }}
+      className="btn btn-secondary btn-small"
+    >
+      Edit
+    </button>
+  </div>
+)}
     </div>
   );
 }

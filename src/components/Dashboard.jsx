@@ -15,6 +15,7 @@ import PayrollReportView from './PayrollReportView';
 import InvoicingReportView from './InvoicingReportView';
 import SettingsView from './SettingsView';
 import FirebaseUsageTracker from './FirebaseUsageTracker';
+import FirebaseUsageTest from './FirebaseUsageTest';
 
 function Dashboard({ user, permissions }) {
   const [activeTab, setActiveTab] = useState('jobs');
@@ -184,6 +185,7 @@ function Dashboard({ user, permissions }) {
   <SettingsView permissions={permissions} />
 )}
 </main>
+<FirebaseUsageTest />
     </div>
   );
 }
