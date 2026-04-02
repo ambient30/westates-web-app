@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '../firebase';
 import { hasPermission } from '../utils/permissions';
 import { logFirestoreOperation } from '../utils/firebaseUsageLogger';
@@ -14,6 +14,7 @@ import CreateJobModal from './CreateJobModal';
 
 function JobsList({ permissions }) {
   const [jobs, setJobs] = useState([]);
+  const [employees, setEmployees] = useState([]); // CACHE employees here
   const [loading, setLoading] = useState(true);
   const [editingJob, setEditingJob] = useState(null);
   const [assigningJob, setAssigningJob] = useState(null);
@@ -34,8 +35,7 @@ function JobsList({ permissions }) {
     try {
       setLoading(true);
       
-      // Only load jobs that are NOT hidden from summary
-      // This filters out completed/archived jobs
+      // OPTIMIZATION 1: Only load jobs that are NOT hidden (active jobs only)
       const jobsQuery = query(
         collection(db, 'jobs'),
         where('hideFromSummary', '!=', true)
@@ -43,7 +43,7 @@ function JobsList({ permissions }) {
       
       const querySnapshot = await getDocs(jobsQuery);
       
-      // LOG THE READS
+      // LOG THE JOB READS
       await logFirestoreOperation('reads', querySnapshot.docs.length);
       
       const jobsData = querySnapshot.docs.map(doc => ({
@@ -52,6 +52,20 @@ function JobsList({ permissions }) {
       }));
       
       setJobs(jobsData);
+      
+      // OPTIMIZATION 2: Load ALL employees ONCE and cache
+      const employeesSnap = await getDocs(collection(db, 'employees'));
+      
+      // LOG THE EMPLOYEE READS
+      await logFirestoreOperation('reads', employeesSnap.docs.length);
+      
+      const employeesData = employeesSnap.docs.map(doc => ({ 
+        id: doc.id, 
+        ...doc.data() 
+      }));
+      
+      setEmployees(employeesData);
+      
     } catch (err) {
       console.error('Error loading jobs:', err);
     } finally {
@@ -143,6 +157,7 @@ function JobsList({ permissions }) {
       <WeekSection
         title="Broken Jobs"
         jobs={brokenJobs}
+        employees={employees}
         color="#d32f2f"
         canUpdate={canUpdate}
         onEdit={setEditingJob}
@@ -157,6 +172,7 @@ function JobsList({ permissions }) {
       <WeekSection
         title="This Week"
         jobs={thisWeek}
+        employees={employees}
         color="#4caf50"
         canUpdate={canUpdate}
         onEdit={setEditingJob}
@@ -171,6 +187,7 @@ function JobsList({ permissions }) {
       <WeekSection
         title="Next Week"
         jobs={nextWeek}
+        employees={employees}
         color="#2196f3"
         canUpdate={canUpdate}
         onEdit={setEditingJob}
@@ -185,6 +202,7 @@ function JobsList({ permissions }) {
       <WeekSection
         title="Later"
         jobs={later}
+        employees={employees}
         color="#9c27b0"
         canUpdate={canUpdate}
         onEdit={setEditingJob}
@@ -199,6 +217,7 @@ function JobsList({ permissions }) {
       <WeekSection
         title="Potential Returns"
         jobs={potentialReturns}
+        employees={employees}
         color="#ff9800"
         canUpdate={canUpdate}
         onEdit={setEditingJob}
@@ -308,10 +327,7 @@ function JobsList({ permissions }) {
   );
 }
 
-// ... rest of component (WeekSection, DateGroup, JobRow) stays the same ...
-// [Include the full WeekSection, DateGroup, and JobRow functions from your original file]
-
-function WeekSection({ title, jobs, color, canUpdate, onEdit, onAssign, onViewDetails, onDispatch, onContinue, onFinish, onReturn }) {
+function WeekSection({ title, jobs, employees, color, canUpdate, onEdit, onAssign, onViewDetails, onDispatch, onContinue, onFinish, onReturn }) {
   if (jobs.length === 0) return null;
 
   const jobsByDate = {};
@@ -345,6 +361,7 @@ function WeekSection({ title, jobs, color, canUpdate, onEdit, onAssign, onViewDe
           key={date}
           date={date}
           jobs={jobsByDate[date]}
+          employees={employees}
           canUpdate={canUpdate}
           onEdit={onEdit}
           onAssign={onAssign}
@@ -359,7 +376,7 @@ function WeekSection({ title, jobs, color, canUpdate, onEdit, onAssign, onViewDe
   );
 }
 
-function DateGroup({ date, jobs, canUpdate, onEdit, onAssign, onViewDetails, onDispatch, onContinue, onFinish, onReturn }) {
+function DateGroup({ date, jobs, employees, canUpdate, onEdit, onAssign, onViewDetails, onDispatch, onContinue, onFinish, onReturn }) {
   const formatDate = (dateStr) => {
     const date = new Date(dateStr);
     return date.toLocaleDateString('en-US', { 
@@ -392,6 +409,7 @@ function DateGroup({ date, jobs, canUpdate, onEdit, onAssign, onViewDetails, onD
           <JobRow
             key={job.id}
             job={job}
+            employees={employees}
             canUpdate={canUpdate}
             onEdit={onEdit}
             onAssign={onAssign}
@@ -407,34 +425,19 @@ function DateGroup({ date, jobs, canUpdate, onEdit, onAssign, onViewDetails, onD
   );
 }
 
-function JobRow({ job, canUpdate, onEdit, onAssign, onViewDetails, onDispatch, onContinue, onFinish, onReturn }) {
+function JobRow({ job, employees, canUpdate, onEdit, onAssign, onViewDetails, onDispatch, onContinue, onFinish, onReturn }) {
   const [employeeData, setEmployeeData] = useState([]);
   
   useEffect(() => {
-    if (job.equipmentCarrier) {
-      loadEmployeeEquipment();
-    }
-  }, [job.equipmentCarrier]);
-
-  const loadEmployeeEquipment = async () => {
-    try {
+    if (job.equipmentCarrier && employees.length > 0) {
+      // Use cached employees instead of loading again!
       const carriers = job.equipmentCarrier.split(',').map(name => name.trim());
-      const employeesSnap = await getDocs(collection(db, 'employees'));
-      
-      // LOG THE EMPLOYEE READS
-      await logFirestoreOperation('reads', employeesSnap.docs.length);
-      
-      const employees = employeesSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      
       const carrierData = carriers.map(carrierName => {
         return employees.find(emp => emp.fullName === carrierName);
       }).filter(Boolean);
-      
       setEmployeeData(carrierData);
-    } catch (err) {
-      console.error('Error loading employee equipment:', err);
     }
-  };
+  }, [job.equipmentCarrier, employees]);
 
   const assignedFlaggers = job.assignedFlaggers 
     ? job.assignedFlaggers.split(',').map(name => name.trim()).filter(Boolean)
