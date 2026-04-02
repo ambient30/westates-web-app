@@ -57,3 +57,5 @@ Direct links to raw source files for easy access:
 - [WESTATES_MASTER_TRACKING.md] (https://raw.githubusercontent.com/ambient30/westates-web-app/refs/heads/main/src/components/WESTATES_MASTER_TRACKING.md)
 - [WESTATES_PROJECT_INSTRUCTIONS.md] (https://raw.githubusercontent.com/ambient30/westates-web-app/refs/heads/main/src/components/WESTATES_PROJECT_INSTRUCTIONS.md)
 - [WESTATES_SYSTEM_OVERVIEW.md] (https://raw.githubusercontent.com/ambient30/westates-web-app/refs/heads/main/src/components/WESTATES_SYSTEM_OVERVIEW.md)
+- [FIREBASE_LOGGING_GUIDE.md] (https://raw.githubusercontent.com/ambient30/westates-web-app/refs/heads/main/src/components/FIREBASE_LOGGING_GUIDE.md)
+- [SCALING_FIREBASE_READS.md] (https://raw.githubusercontent.com/ambient30/westates-web-app/refs/heads/main/src/components/SCALING_FIREBASE_READS.md)

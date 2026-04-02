@@ -2,12 +2,24 @@ import { doc, updateDoc, setDoc, getDoc, increment } from 'firebase/firestore';
 import { db } from '../firebase';
 
 /**
+ * Get today's date in a Firestore-safe format (no slashes)
+ * Format: YYYY-MM-DD (e.g., "2026-04-02")
+ */
+const getTodayKey = () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+/**
  * Logs Firebase operations to track daily usage
  * Call this after any Firestore read, write, or delete operation
  */
 export const logFirestoreOperation = async (type, count = 1) => {
   try {
-    const today = new Date().toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles' });
+    const today = getTodayKey();
     const usageRef = doc(db, 'firebaseUsage', today);
     
     // Check if document exists
@@ -38,7 +50,7 @@ export const logFirestoreOperation = async (type, count = 1) => {
  */
 export const logFirestoreOperations = async (operations) => {
   try {
-    const today = new Date().toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles' });
+    const today = getTodayKey();
     const usageRef = doc(db, 'firebaseUsage', today);
     
     const usageDoc = await getDoc(usageRef);
@@ -69,7 +81,7 @@ export const logFirestoreOperations = async (operations) => {
  */
 export const checkUsageLimits = async () => {
   try {
-    const today = new Date().toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles' });
+    const today = getTodayKey();
     const usageDoc = await getDoc(doc(db, 'firebaseUsage', today));
     
     if (!usageDoc.exists()) {

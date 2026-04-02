@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 import { db } from '../firebase';
 import { hasPermission } from '../utils/permissions';
 import { logFirestoreOperation } from '../utils/firebaseUsageLogger';
@@ -33,7 +33,15 @@ function JobsList({ permissions }) {
   const loadJobs = async () => {
     try {
       setLoading(true);
-      const querySnapshot = await getDocs(collection(db, 'jobs'));
+      
+      // Only load jobs that are NOT hidden from summary
+      // This filters out completed/archived jobs
+      const jobsQuery = query(
+        collection(db, 'jobs'),
+        where('hideFromSummary', '!=', true)
+      );
+      
+      const querySnapshot = await getDocs(jobsQuery);
       
       // LOG THE READS
       await logFirestoreOperation('reads', querySnapshot.docs.length);
@@ -42,6 +50,7 @@ function JobsList({ permissions }) {
         id: doc.id,
         ...doc.data()
       }));
+      
       setJobs(jobsData);
     } catch (err) {
       console.error('Error loading jobs:', err);
@@ -50,251 +59,257 @@ function JobsList({ permissions }) {
     }
   };
 
-const categorizeJobs = () => {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const categorizeJobs = () => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
-  const thisWeekEnd = new Date(today);
-  thisWeekEnd.setDate(today.getDate() + (6 - today.getDay()));
+    const thisWeekEnd = new Date(today);
+    thisWeekEnd.setDate(today.getDate() + (6 - today.getDay()));
 
-  const nextWeekEnd = new Date(thisWeekEnd);
-  nextWeekEnd.setDate(thisWeekEnd.getDate() + 7);
+    const nextWeekEnd = new Date(thisWeekEnd);
+    nextWeekEnd.setDate(thisWeekEnd.getDate() + 7);
 
-  const thisWeek = [];
-  const nextWeek = [];
-  const later = [];
-  const potentialReturns = [];
-  const brokenJobs = [];
+    const thisWeek = [];
+    const nextWeek = [];
+    const later = [];
+    const potentialReturns = [];
+    const brokenJobs = [];
 
-  jobs.forEach(job => {
-    // Skip jobs with hideFromSummary
-    if (job.hideFromSummary === true) return;
+    jobs.forEach(job => {
+      // Skip jobs with hideFromSummary (shouldn't happen due to query, but defensive)
+      if (job.hideFromSummary === true) return;
 
-    // Potential Returns: Jobs without date or time
-    if (!job.initialJobDate || !job.initialJobTime) {
-      potentialReturns.push(job);
-      return;
-    }
+      // Potential Returns: Jobs without date or time
+      if (!job.initialJobDate || !job.initialJobTime) {
+        potentialReturns.push(job);
+        return;
+      }
 
-    const jobDate = new Date(job.initialJobDate);
-    jobDate.setHours(0, 0, 0, 0);
+      const jobDate = new Date(job.initialJobDate);
+      jobDate.setHours(0, 0, 0, 0);
 
-    // Check if date is valid
-    if (isNaN(jobDate.getTime())) {
-      brokenJobs.push(job);
-      return;
-    }
+      // Check if date is valid
+      if (isNaN(jobDate.getTime())) {
+        brokenJobs.push(job);
+        return;
+      }
 
-    // Broken Jobs: Past jobs that should have been removed
-    if (jobDate < today) {
-      brokenJobs.push(job);
-      return;
-    }
+      // Broken Jobs: Past jobs that should have been removed
+      if (jobDate < today) {
+        brokenJobs.push(job);
+        return;
+      }
 
-    // Categorize future jobs
-    if (jobDate >= today && jobDate <= thisWeekEnd) {
-      thisWeek.push(job);
-    } else if (jobDate > thisWeekEnd && jobDate <= nextWeekEnd) {
-      nextWeek.push(job);
-    } else if (jobDate > nextWeekEnd) {
-      later.push(job);
-    }
-  });
+      // Categorize future jobs
+      if (jobDate >= today && jobDate <= thisWeekEnd) {
+        thisWeek.push(job);
+      } else if (jobDate > thisWeekEnd && jobDate <= nextWeekEnd) {
+        nextWeek.push(job);
+      } else if (jobDate > nextWeekEnd) {
+        later.push(job);
+      }
+    });
 
-  return { thisWeek, nextWeek, later, potentialReturns, brokenJobs };
-};
+    return { thisWeek, nextWeek, later, potentialReturns, brokenJobs };
+  };
 
   const { thisWeek, nextWeek, later, potentialReturns, brokenJobs } = categorizeJobs();
 
-if (loading) {
+  if (loading) {
+    return (
+      <div className="loading-screen">
+        <div className="spinner"></div>
+        <p>Loading jobs...</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="loading-screen">
-      <div className="spinner"></div>
-      <p>Loading jobs...</p>
+    <div>
+      <div className="jobs-header">
+        <h2>Jobs</h2>
+        <div className="jobs-actions">
+          {canUpdate && (
+            <button onClick={() => setShowCreateModal(true)} className="btn btn-primary">
+              + New Job
+            </button>
+          )}
+          <button onClick={loadJobs} className="btn btn-secondary">
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      <WeekSection
+        title="Broken Jobs"
+        jobs={brokenJobs}
+        color="#d32f2f"
+        canUpdate={canUpdate}
+        onEdit={setEditingJob}
+        onAssign={setAssigningJob}
+        onViewDetails={setViewingJob}
+        onDispatch={setDispatchingJob}
+        onContinue={setContinuingJob}
+        onFinish={setFinishingJob}
+        onReturn={setReturningJob}
+      />
+
+      <WeekSection
+        title="This Week"
+        jobs={thisWeek}
+        color="#4caf50"
+        canUpdate={canUpdate}
+        onEdit={setEditingJob}
+        onAssign={setAssigningJob}
+        onViewDetails={setViewingJob}
+        onDispatch={setDispatchingJob}
+        onContinue={setContinuingJob}
+        onFinish={setFinishingJob}
+        onReturn={setReturningJob}
+      />
+
+      <WeekSection
+        title="Next Week"
+        jobs={nextWeek}
+        color="#2196f3"
+        canUpdate={canUpdate}
+        onEdit={setEditingJob}
+        onAssign={setAssigningJob}
+        onViewDetails={setViewingJob}
+        onDispatch={setDispatchingJob}
+        onContinue={setContinuingJob}
+        onFinish={setFinishingJob}
+        onReturn={setReturningJob}
+      />
+
+      <WeekSection
+        title="Later"
+        jobs={later}
+        color="#9c27b0"
+        canUpdate={canUpdate}
+        onEdit={setEditingJob}
+        onAssign={setAssigningJob}
+        onViewDetails={setViewingJob}
+        onDispatch={setDispatchingJob}
+        onContinue={setContinuingJob}
+        onFinish={setFinishingJob}
+        onReturn={setReturningJob}
+      />
+
+      <WeekSection
+        title="Potential Returns"
+        jobs={potentialReturns}
+        color="#ff9800"
+        canUpdate={canUpdate}
+        onEdit={setEditingJob}
+        onAssign={setAssigningJob}
+        onViewDetails={setViewingJob}
+        onDispatch={setDispatchingJob}
+        onContinue={setContinuingJob}
+        onFinish={setFinishingJob}
+        onReturn={setReturningJob}
+      />
+
+      {jobs.filter(j => !j.hideFromSummary).length === 0 && (
+        <div className="empty-state">
+          <h3>No active jobs found</h3>
+          <p>All jobs have been completed or archived</p>
+        </div>
+      )}
+
+      {editingJob && (
+        <EditJobModal
+          job={editingJob}
+          onClose={() => setEditingJob(null)}
+          onSave={() => {
+            setEditingJob(null);
+            loadJobs();
+          }}
+        />
+      )}
+
+      {assigningJob && (
+        <AssignEmployeesModal
+          job={assigningJob}
+          onClose={() => setAssigningJob(null)}
+          onSave={() => {
+            setAssigningJob(null);
+            loadJobs();
+          }}
+        />
+      )}
+
+      {viewingJob && (
+        <JobDetailsModal
+          job={viewingJob}
+          permissions={permissions}
+          onClose={() => setViewingJob(null)}
+          onUpdate={() => {
+            setViewingJob(null);
+            loadJobs();
+          }}
+        />
+      )}
+
+      {showCreateModal && (
+        <CreateJobModal
+          onClose={() => setShowCreateModal(false)}
+          onSave={() => {
+            setShowCreateModal(false);
+            loadJobs();
+          }}
+        />
+      )}
+
+      {dispatchingJob && (
+        <DispatchFlaggersModal
+          job={dispatchingJob}
+          onClose={() => setDispatchingJob(null)}
+          onSave={() => {
+            setDispatchingJob(null);
+            loadJobs();
+          }}
+        />
+      )}
+
+      {continuingJob && (
+        <ContinueJobModal
+          job={continuingJob}
+          onClose={() => setContinuingJob(null)}
+          onSave={() => {
+            setContinuingJob(null);
+            loadJobs();
+          }}
+        />
+      )}
+
+      {finishingJob && (
+        <FinishJobModal
+          job={finishingJob}
+          onClose={() => setFinishingJob(null)}
+          onSave={() => {
+            setFinishingJob(null);
+            loadJobs();
+          }}
+        />
+      )}
+
+      {returningJob && (
+        <ReturnJobModal
+          job={returningJob}
+          onClose={() => setReturningJob(null)}
+          onSave={() => {
+            setReturningJob(null);
+            loadJobs();
+          }}
+        />
+      )}
     </div>
   );
 }
 
-return (
-  <div>
-    <div className="jobs-header">
-      <h2>Jobs</h2>
-      <div className="jobs-actions">
-        {canUpdate && (
-          <button onClick={() => setShowCreateModal(true)} className="btn btn-primary">
-            + New Job
-          </button>
-        )}
-        <button onClick={loadJobs} className="btn btn-secondary">
-          Refresh
-        </button>
-      </div>
-    </div>
-
-    <WeekSection
-      title="Broken Jobs"
-      jobs={brokenJobs}
-      color="#d32f2f"
-      canUpdate={canUpdate}
-      onEdit={setEditingJob}
-      onAssign={setAssigningJob}
-      onViewDetails={setViewingJob}
-      onDispatch={setDispatchingJob}
-	  onContinue={setContinuingJob}
-	  onFinish={setFinishingJob}
-	  onReturn={setReturningJob}
-    />
-
-    <WeekSection
-      title="This Week"
-      jobs={thisWeek}
-      color="#4caf50"
-      canUpdate={canUpdate}
-      onEdit={setEditingJob}
-      onAssign={setAssigningJob}
-      onViewDetails={setViewingJob}
-      onDispatch={setDispatchingJob}
-	  onContinue={setContinuingJob}
-	  onFinish={setFinishingJob}
-	  onReturn={setReturningJob}
-    />
-
-    <WeekSection
-      title="Next Week"
-      jobs={nextWeek}
-      color="#2196f3"
-      canUpdate={canUpdate}
-      onEdit={setEditingJob}
-      onAssign={setAssigningJob}
-      onViewDetails={setViewingJob}
-      onDispatch={setDispatchingJob}
-	  onContinue={setContinuingJob}
-	  onFinish={setFinishingJob}
-	  onReturn={setReturningJob}
-    />
-
-    <WeekSection
-      title="Later"
-      jobs={later}
-      color="#9c27b0"
-      canUpdate={canUpdate}
-      onEdit={setEditingJob}
-      onAssign={setAssigningJob}
-      onViewDetails={setViewingJob}
-      onDispatch={setDispatchingJob}
-	  onContinue={setContinuingJob}
-	  onFinish={setFinishingJob}
-	  onReturn={setReturningJob}
-    />
-
-    <WeekSection
-      title="Potential Returns"
-      jobs={potentialReturns}
-      color="#ff9800"
-      canUpdate={canUpdate}
-      onEdit={setEditingJob}
-      onAssign={setAssigningJob}
-      onViewDetails={setViewingJob}
-      onDispatch={setDispatchingJob}
-	  onContinue={setContinuingJob}
-	  onFinish={setFinishingJob}
-	  onReturn={setReturningJob}
-    />
-
-    {jobs.filter(j => !j.hideFromSummary).length === 0 && (
-      <div className="empty-state">
-        <h3>No jobs found</h3>
-        <p>Create your first job to get started</p>
-      </div>
-    )}
-
-    {editingJob && (
-      <EditJobModal
-        job={editingJob}
-        onClose={() => setEditingJob(null)}
-        onSave={() => {
-          setEditingJob(null);
-          loadJobs();
-        }}
-      />
-    )}
-
-    {assigningJob && (
-      <AssignEmployeesModal
-        job={assigningJob}
-        onClose={() => setAssigningJob(null)}
-        onSave={() => {
-          setAssigningJob(null);
-          loadJobs();
-        }}
-      />
-    )}
-
-    {viewingJob && (
-      <JobDetailsModal
-        job={viewingJob}
-        permissions={permissions}
-        onClose={() => setViewingJob(null)}
-        onUpdate={() => {
-          setViewingJob(null);
-          loadJobs();
-        }}
-      />
-    )}
-	
-	{showCreateModal && (
-  <CreateJobModal
-    onClose={() => setShowCreateModal(false)}
-    onSave={() => {
-      setShowCreateModal(false);
-      loadJobs();
-    }}
-  />
-)}
-
-    {dispatchingJob && (
-      <DispatchFlaggersModal
-        job={dispatchingJob}
-        onClose={() => setDispatchingJob(null)}
-        onSave={() => {
-          setDispatchingJob(null);
-          loadJobs();
-        }}
-      />
-    )}
-	{continuingJob && (
-  <ContinueJobModal
-    job={continuingJob}
-    onClose={() => setContinuingJob(null)}
-    onSave={() => {
-      setContinuingJob(null);
-      loadJobs();
-    }}
-  />
-)}
-{finishingJob && (
-  <FinishJobModal
-    job={finishingJob}
-    onClose={() => setFinishingJob(null)}
-    onSave={() => {
-      setFinishingJob(null);
-      loadJobs();
-    }}
-  />
-)}
-{returningJob && (
-  <ReturnJobModal
-    job={returningJob}
-    onClose={() => setReturningJob(null)}
-    onSave={() => {
-      setReturningJob(null);
-      loadJobs();
-    }}
-  />
-)}
-  </div>
-);
-}
+// ... rest of component (WeekSection, DateGroup, JobRow) stays the same ...
+// [Include the full WeekSection, DateGroup, and JobRow functions from your original file]
 
 function WeekSection({ title, jobs, color, canUpdate, onEdit, onAssign, onViewDetails, onDispatch, onContinue, onFinish, onReturn }) {
   if (jobs.length === 0) return null;
@@ -314,7 +329,6 @@ function WeekSection({ title, jobs, color, canUpdate, onEdit, onAssign, onViewDe
 
   return (
     <div style={{ marginBottom: '32px' }}>
-      {/* UPDATED: Full-width color bar */}
       <div style={{ 
         background: color,
         padding: '16px 20px',
@@ -336,9 +350,9 @@ function WeekSection({ title, jobs, color, canUpdate, onEdit, onAssign, onViewDe
           onAssign={onAssign}
           onViewDetails={onViewDetails}
           onDispatch={onDispatch}
-		  onContinue={onContinue}
-		  onFinish={onFinish}
-		  onReturn={onReturn}
+          onContinue={onContinue}
+          onFinish={onFinish}
+          onReturn={onReturn}
         />
       ))}
     </div>
@@ -383,9 +397,9 @@ function DateGroup({ date, jobs, canUpdate, onEdit, onAssign, onViewDetails, onD
             onAssign={onAssign}
             onViewDetails={onViewDetails}
             onDispatch={onDispatch}
-			onContinue={onContinue}
-			onFinish={onFinish}
-			onReturn={onReturn}
+            onContinue={onContinue}
+            onFinish={onFinish}
+            onReturn={onReturn}
           />
         ))}
       </div>
@@ -543,66 +557,66 @@ function JobRow({ job, canUpdate, onEdit, onAssign, onViewDetails, onDispatch, o
       </div>
 
       {canUpdate && (
-  <div style={{ flex: '0 0 420px', display: 'flex', gap: '4px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-    <button 
-      onClick={(e) => {
-        e.stopPropagation();
-        onFinish(job);
-      }}
-      className="btn btn-secondary btn-small"
-      style={{ background: '#d32f2f', color: 'white' }}
-    >
-      Finish
-    </button>
-    <button 
-      onClick={(e) => {
-        e.stopPropagation();
-        onReturn(job);
-      }}
-      className="btn btn-secondary btn-small"
-      style={{ background: '#ff9800', color: 'white' }}
-    >
-      Return
-    </button>
-    <button 
-      onClick={(e) => {
-        e.stopPropagation();
-        onContinue(job);
-      }}
-      className="btn btn-secondary btn-small"
-      style={{ background: '#4caf50', color: 'white' }}
-    >
-      Continue
-    </button>
-    <button 
-      onClick={(e) => {
-        e.stopPropagation();
-        onDispatch(job);
-      }}
-      className="btn btn-secondary btn-small"
-    >
-      Dispatch
-    </button>
-    <button 
-      onClick={(e) => {
-        e.stopPropagation();
-        onAssign(job);
-      }}
-      className="btn btn-secondary btn-small"
-    >
-      Assign
-    </button>
-    <button 
-      onClick={(e) => {
-        e.stopPropagation();
-        onEdit(job);
-      }}
-      className="btn btn-secondary btn-small"
-    >
-      Edit
-    </button>
-  </div>
-)}
+        <div style={{ flex: '0 0 420px', display: 'flex', gap: '4px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          <button 
+            onClick={(e) => {
+              e.stopPropagation();
+              onFinish(job);
+            }}
+            className="btn btn-secondary btn-small"
+            style={{ background: '#d32f2f', color: 'white' }}
+          >
+            Finish
+          </button>
+          <button 
+            onClick={(e) => {
+              e.stopPropagation();
+              onReturn(job);
+            }}
+            className="btn btn-secondary btn-small"
+            style={{ background: '#ff9800', color: 'white' }}
+          >
+            Return
+          </button>
+          <button 
+            onClick={(e) => {
+              e.stopPropagation();
+              onContinue(job);
+            }}
+            className="btn btn-secondary btn-small"
+            style={{ background: '#4caf50', color: 'white' }}
+          >
+            Continue
+          </button>
+          <button 
+            onClick={(e) => {
+              e.stopPropagation();
+              onDispatch(job);
+            }}
+            className="btn btn-secondary btn-small"
+          >
+            Dispatch
+          </button>
+          <button 
+            onClick={(e) => {
+              e.stopPropagation();
+              onAssign(job);
+            }}
+            className="btn btn-secondary btn-small"
+          >
+            Assign
+          </button>
+          <button 
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit(job);
+            }}
+            className="btn btn-secondary btn-small"
+          >
+            Edit
+          </button>
+        </div>
+      )}
     </div>
   );
 }

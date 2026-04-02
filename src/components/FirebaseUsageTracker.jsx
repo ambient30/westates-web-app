@@ -2,6 +2,18 @@ import { useState, useEffect } from 'react';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 
+/**
+ * Get today's date in a Firestore-safe format (no slashes)
+ * Format: YYYY-MM-DD (e.g., "2026-04-02")
+ */
+const getTodayKey = () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 function FirebaseUsageTracker() {
   const [usage, setUsage] = useState({
     reads: 0,
@@ -27,7 +39,7 @@ function FirebaseUsageTracker() {
 
   const loadUsage = async () => {
     try {
-      const today = new Date().toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles' });
+      const today = getTodayKey();
       console.log('🔍 Loading usage for date:', today);
       
       const usageRef = doc(db, 'firebaseUsage', today);
@@ -215,7 +227,7 @@ function FirebaseUsageTracker() {
         color: '#5f6368',
         padding: '2px 12px'
       }}>
-        {debugInfo} | Check browser console (F12) for details
+        {debugInfo}
       </div>
     </div>
   );
