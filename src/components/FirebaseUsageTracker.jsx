@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 
 function FirebaseUsageTracker() {
@@ -10,6 +10,7 @@ function FirebaseUsageTracker() {
     lastReset: null,
     loading: true
   });
+  const [debugInfo, setDebugInfo] = useState('');
 
   const LIMITS = {
     reads: 50000,
@@ -19,32 +20,52 @@ function FirebaseUsageTracker() {
 
   useEffect(() => {
     loadUsage();
-    // Refresh every 30 seconds
-    const interval = setInterval(loadUsage, 30000);
+    // Refresh every 5 seconds
+    const interval = setInterval(loadUsage, 5000);
     return () => clearInterval(interval);
   }, []);
 
   const loadUsage = async () => {
     try {
       const today = new Date().toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles' });
-      const usageDoc = await getDoc(doc(db, 'firebaseUsage', today));
+      console.log('🔍 Loading usage for date:', today);
+      
+      const usageRef = doc(db, 'firebaseUsage', today);
+      const usageDoc = await getDoc(usageRef);
+      
+      console.log('📄 Document exists?', usageDoc.exists());
       
       if (usageDoc.exists()) {
-        setUsage({ ...usageDoc.data(), loading: false });
+        const data = usageDoc.data();
+        console.log('✅ Usage data loaded:', data);
+        setUsage({ 
+          reads: data.reads || 0,
+          writes: data.writes || 0,
+          deletes: data.deletes || 0,
+          lastReset: data.lastReset || today,
+          loading: false 
+        });
+        setDebugInfo(`✅ Loaded: R:${data.reads} W:${data.writes} D:${data.deletes}`);
       } else {
-        // Initialize today's usage
+        console.log('📝 Creating new usage document for today');
+        // Initialize today's usage document
         const newUsage = {
           reads: 0,
           writes: 0,
           deletes: 0,
           lastReset: today
         };
-        await setDoc(doc(db, 'firebaseUsage', today), newUsage);
+        await setDoc(usageRef, newUsage);
+        console.log('✅ New document created');
         setUsage({ ...newUsage, loading: false });
+        setDebugInfo('📝 New document created');
       }
     } catch (err) {
-      console.error('Error loading Firebase usage:', err);
+      console.error('❌ Error loading Firebase usage:', err);
+      console.error('Error code:', err.code);
+      console.error('Error message:', err.message);
       setUsage(prev => ({ ...prev, loading: false }));
+      setDebugInfo(`❌ Error: ${err.code || err.message}`);
     }
   };
 
@@ -82,105 +103,120 @@ function FirebaseUsageTracker() {
   return (
     <div style={{
       display: 'flex',
-      alignItems: 'center',
-      gap: '16px',
-      fontSize: '12px',
-      padding: '4px 12px',
-      background: '#f8f9fa',
-      borderRadius: '4px',
-      border: '1px solid #e0e0e0'
+      flexDirection: 'column',
+      gap: '4px'
     }}>
-      {/* Reads */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-        <span style={{ fontWeight: '600', color: '#5f6368' }}>Reads:</span>
-        <span style={{ 
-          fontWeight: '600', 
-          color: getStatusColor(usage.reads, LIMITS.reads) 
-        }}>
-          {formatNumber(usage.reads)}
-        </span>
-        <span style={{ color: '#9e9e9e' }}>/ {formatNumber(LIMITS.reads)}</span>
-        <span style={{ 
-          fontSize: '10px', 
-          color: getStatusColor(usage.reads, LIMITS.reads),
-          fontWeight: '600'
-        }}>
-          ({getPercentage(usage.reads, LIMITS.reads)}%)
-        </span>
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '16px',
+        fontSize: '12px',
+        padding: '4px 12px',
+        background: '#f8f9fa',
+        borderRadius: '4px',
+        border: '1px solid #e0e0e0'
+      }}>
+        {/* Reads */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <span style={{ fontWeight: '600', color: '#5f6368' }}>Reads:</span>
+          <span style={{ 
+            fontWeight: '600', 
+            color: getStatusColor(usage.reads, LIMITS.reads) 
+          }}>
+            {formatNumber(usage.reads)}
+          </span>
+          <span style={{ color: '#9e9e9e' }}>/ {formatNumber(LIMITS.reads)}</span>
+          <span style={{ 
+            fontSize: '10px', 
+            color: getStatusColor(usage.reads, LIMITS.reads),
+            fontWeight: '600'
+          }}>
+            ({getPercentage(usage.reads, LIMITS.reads)}%)
+          </span>
+        </div>
+
+        {/* Separator */}
+        <div style={{ 
+          width: '1px', 
+          height: '20px', 
+          background: '#e0e0e0' 
+        }}></div>
+
+        {/* Writes */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <span style={{ fontWeight: '600', color: '#5f6368' }}>Writes:</span>
+          <span style={{ 
+            fontWeight: '600', 
+            color: getStatusColor(usage.writes, LIMITS.writes) 
+          }}>
+            {formatNumber(usage.writes)}
+          </span>
+          <span style={{ color: '#9e9e9e' }}>/ {formatNumber(LIMITS.writes)}</span>
+          <span style={{ 
+            fontSize: '10px', 
+            color: getStatusColor(usage.writes, LIMITS.writes),
+            fontWeight: '600'
+          }}>
+            ({getPercentage(usage.writes, LIMITS.writes)}%)
+          </span>
+        </div>
+
+        {/* Separator */}
+        <div style={{ 
+          width: '1px', 
+          height: '20px', 
+          background: '#e0e0e0' 
+        }}></div>
+
+        {/* Deletes */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <span style={{ fontWeight: '600', color: '#5f6368' }}>Deletes:</span>
+          <span style={{ 
+            fontWeight: '600', 
+            color: getStatusColor(usage.deletes, LIMITS.deletes) 
+          }}>
+            {formatNumber(usage.deletes)}
+          </span>
+          <span style={{ color: '#9e9e9e' }}>/ {formatNumber(LIMITS.deletes)}</span>
+          <span style={{ 
+            fontSize: '10px', 
+            color: getStatusColor(usage.deletes, LIMITS.deletes),
+            fontWeight: '600'
+          }}>
+            ({getPercentage(usage.deletes, LIMITS.deletes)}%)
+          </span>
+        </div>
+
+        {/* Refresh indicator */}
+        <button
+          onClick={loadUsage}
+          style={{
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            padding: '4px',
+            fontSize: '14px',
+            color: '#5f6368',
+            display: 'flex',
+            alignItems: 'center',
+            borderRadius: '4px'
+          }}
+          onMouseOver={(e) => e.target.style.background = '#e8eaed'}
+          onMouseOut={(e) => e.target.style.background = 'none'}
+          title="Refresh usage data (auto-refreshes every 5 seconds)"
+        >
+          🔄
+        </button>
       </div>
-
-      {/* Separator */}
-      <div style={{ 
-        width: '1px', 
-        height: '20px', 
-        background: '#e0e0e0' 
-      }}></div>
-
-      {/* Writes */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-        <span style={{ fontWeight: '600', color: '#5f6368' }}>Writes:</span>
-        <span style={{ 
-          fontWeight: '600', 
-          color: getStatusColor(usage.writes, LIMITS.writes) 
-        }}>
-          {formatNumber(usage.writes)}
-        </span>
-        <span style={{ color: '#9e9e9e' }}>/ {formatNumber(LIMITS.writes)}</span>
-        <span style={{ 
-          fontSize: '10px', 
-          color: getStatusColor(usage.writes, LIMITS.writes),
-          fontWeight: '600'
-        }}>
-          ({getPercentage(usage.writes, LIMITS.writes)}%)
-        </span>
+      
+      {/* Debug info */}
+      <div style={{
+        fontSize: '10px',
+        color: '#5f6368',
+        padding: '2px 12px'
+      }}>
+        {debugInfo} | Check browser console (F12) for details
       </div>
-
-      {/* Separator */}
-      <div style={{ 
-        width: '1px', 
-        height: '20px', 
-        background: '#e0e0e0' 
-      }}></div>
-
-      {/* Deletes */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-        <span style={{ fontWeight: '600', color: '#5f6368' }}>Deletes:</span>
-        <span style={{ 
-          fontWeight: '600', 
-          color: getStatusColor(usage.deletes, LIMITS.deletes) 
-        }}>
-          {formatNumber(usage.deletes)}
-        </span>
-        <span style={{ color: '#9e9e9e' }}>/ {formatNumber(LIMITS.deletes)}</span>
-        <span style={{ 
-          fontSize: '10px', 
-          color: getStatusColor(usage.deletes, LIMITS.deletes),
-          fontWeight: '600'
-        }}>
-          ({getPercentage(usage.deletes, LIMITS.deletes)}%)
-        </span>
-      </div>
-
-      {/* Refresh indicator */}
-      <button
-        onClick={loadUsage}
-        style={{
-          background: 'none',
-          border: 'none',
-          cursor: 'pointer',
-          padding: '4px',
-          fontSize: '14px',
-          color: '#5f6368',
-          display: 'flex',
-          alignItems: 'center',
-          borderRadius: '4px'
-        }}
-        onMouseOver={(e) => e.target.style.background = '#e8eaed'}
-        onMouseOut={(e) => e.target.style.background = 'none'}
-        title="Refresh usage data"
-      >
-        🔄
-      </button>
     </div>
   );
 }
