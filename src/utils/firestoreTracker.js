@@ -126,14 +126,36 @@ const scheduleFlush = () => {
 scheduleFlush();
 
 // Track an operation (adds to queue)
-const trackOperation = (type, count = 1) => {
+const trackOperation = (type, count = 1, context = '') => {
   operationQueue[type] += count;
+  
+  // DETAILED LOGGING - See what's being tracked
+  if (count > 0) {
+    console.log(`🔍 TRACKED: ${type} +${count}${context ? ` (${context})` : ''}`);
+    
+    // Stack trace for debugging (only in development)
+    if (count > 20) {
+      console.log('⚠️ Large operation detected - Stack trace:');
+      console.trace();
+    }
+  }
 };
 
 // Wrapped Firestore operations
 export const getDoc = async (...args) => {
   const result = await firestoreGetDoc(...args);
-  trackOperation('reads', 1);
+  
+  // Try to get document path for logging
+  let docPath = 'unknown';
+  try {
+    if (args[0] && args[0]._key && args[0]._key.path && args[0]._key.path.segments) {
+      docPath = args[0]._key.path.segments.join('/');
+    }
+  } catch (e) {
+    // Ignore errors getting doc path
+  }
+  
+  trackOperation('reads', 1, docPath);
   return result;
 };
 
@@ -141,7 +163,18 @@ export const getDocs = async (...args) => {
   const result = await firestoreGetDocs(...args);
   // Track the actual number of documents read
   const docCount = result.docs ? result.docs.length : 0;
-  trackOperation('reads', docCount);
+  
+  // Try to get collection name for logging
+  let collectionName = 'unknown';
+  try {
+    if (args[0] && args[0]._query && args[0]._query.path && args[0]._query.path.segments) {
+      collectionName = args[0]._query.path.segments.join('/');
+    }
+  } catch (e) {
+    // Ignore errors getting collection name
+  }
+  
+  trackOperation('reads', docCount, `${collectionName} - ${docCount} docs`);
   return result;
 };
 

@@ -13,7 +13,7 @@ import CreateJobModal from './CreateJobModal';
 
 function JobsList({ permissions }) {
   const [jobs, setJobs] = useState([]);
-  const [employees, setEmployees] = useState([]); // CACHE employees here
+  const [employees, setEmployees] = useState([]); // ← CACHE EMPLOYEES HERE
   const [loading, setLoading] = useState(true);
   const [editingJob, setEditingJob] = useState(null);
   const [assigningJob, setAssigningJob] = useState(null);
@@ -34,29 +34,32 @@ function JobsList({ permissions }) {
     try {
       setLoading(true);
       
-      // OPTIMIZATION 1: Only load jobs that are NOT hidden (active jobs only)
+      // Load ONLY jobs that aren't hidden (active jobs only)
+      // This prevents loading 92 jobs when you only need 18!
       const jobsQuery = query(
         collection(db, 'jobs'),
         where('hideFromSummary', '!=', true)
       );
       
-      const querySnapshot = await getDocs(jobsQuery);      
+      const querySnapshot = await getDocs(jobsQuery);
       const jobsData = querySnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
       
-      setJobs(jobsData);
-      
-      // OPTIMIZATION 2: Load ALL employees ONCE and cache
-      const employeesSnap = await getDocs(collection(db, 'employees'));
+      // Load employees ONCE - only active employees
+      const employeesQuery = query(
+        collection(db, 'employees'),
+        where('isActive', '==', true)
+      );
+      const employeesSnap = await getDocs(employeesQuery);
       const employeesData = employeesSnap.docs.map(doc => ({ 
         id: doc.id, 
         ...doc.data() 
       }));
       
-      setEmployees(employeesData);
-      
+      setJobs(jobsData);
+      setEmployees(employeesData); // ← CACHE FOR ALL JOB ROWS
     } catch (err) {
       console.error('Error loading jobs:', err);
     } finally {
@@ -64,258 +67,255 @@ function JobsList({ permissions }) {
     }
   };
 
-  const categorizeJobs = () => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+const categorizeJobs = () => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
 
-    const thisWeekEnd = new Date(today);
-    thisWeekEnd.setDate(today.getDate() + (6 - today.getDay()));
+  const thisWeekEnd = new Date(today);
+  thisWeekEnd.setDate(today.getDate() + (6 - today.getDay()));
 
-    const nextWeekEnd = new Date(thisWeekEnd);
-    nextWeekEnd.setDate(thisWeekEnd.getDate() + 7);
+  const nextWeekEnd = new Date(thisWeekEnd);
+  nextWeekEnd.setDate(thisWeekEnd.getDate() + 7);
 
-    const thisWeek = [];
-    const nextWeek = [];
-    const later = [];
-    const potentialReturns = [];
-    const brokenJobs = [];
+  const thisWeek = [];
+  const nextWeek = [];
+  const later = [];
+  const potentialReturns = [];
+  const brokenJobs = [];
 
-    jobs.forEach(job => {
-      // Skip jobs with hideFromSummary (shouldn't happen due to query, but defensive)
-      if (job.hideFromSummary === true) return;
+  jobs.forEach(job => {
+    // Skip jobs with hideFromSummary
+    if (job.hideFromSummary === true) return;
 
-      // Potential Returns: Jobs without date or time
-      if (!job.initialJobDate || !job.initialJobTime) {
-        potentialReturns.push(job);
-        return;
-      }
+    // Potential Returns: Jobs without date or time
+    if (!job.initialJobDate || !job.initialJobTime) {
+      potentialReturns.push(job);
+      return;
+    }
 
-      const jobDate = new Date(job.initialJobDate);
-      jobDate.setHours(0, 0, 0, 0);
+    const jobDate = new Date(job.initialJobDate);
+    jobDate.setHours(0, 0, 0, 0);
 
-      // Check if date is valid
-      if (isNaN(jobDate.getTime())) {
-        brokenJobs.push(job);
-        return;
-      }
+    // Check if date is valid
+    if (isNaN(jobDate.getTime())) {
+      brokenJobs.push(job);
+      return;
+    }
 
-      // Broken Jobs: Past jobs that should have been removed
-      if (jobDate < today) {
-        brokenJobs.push(job);
-        return;
-      }
+    // Broken Jobs: Past jobs that should have been removed
+    if (jobDate < today) {
+      brokenJobs.push(job);
+      return;
+    }
 
-      // Categorize future jobs
-      if (jobDate >= today && jobDate <= thisWeekEnd) {
-        thisWeek.push(job);
-      } else if (jobDate > thisWeekEnd && jobDate <= nextWeekEnd) {
-        nextWeek.push(job);
-      } else if (jobDate > nextWeekEnd) {
-        later.push(job);
-      }
-    });
+    // Categorize future jobs
+    if (jobDate >= today && jobDate <= thisWeekEnd) {
+      thisWeek.push(job);
+    } else if (jobDate > thisWeekEnd && jobDate <= nextWeekEnd) {
+      nextWeek.push(job);
+    } else if (jobDate > nextWeekEnd) {
+      later.push(job);
+    }
+  });
 
-    return { thisWeek, nextWeek, later, potentialReturns, brokenJobs };
-  };
+  return { thisWeek, nextWeek, later, potentialReturns, brokenJobs };
+};
 
   const { thisWeek, nextWeek, later, potentialReturns, brokenJobs } = categorizeJobs();
 
-  if (loading) {
-    return (
-      <div className="loading-screen">
-        <div className="spinner"></div>
-        <p>Loading jobs...</p>
-      </div>
-    );
-  }
-
+if (loading) {
   return (
-    <div>
-      <div className="jobs-header">
-        <h2>Jobs</h2>
-        <div className="jobs-actions">
-          {canUpdate && (
-            <button onClick={() => setShowCreateModal(true)} className="btn btn-primary">
-              + New Job
-            </button>
-          )}
-          <button onClick={loadJobs} className="btn btn-secondary">
-            Refresh
-          </button>
-        </div>
-      </div>
-
-      <WeekSection
-        title="Broken Jobs"
-        jobs={brokenJobs}
-        employees={employees}
-        color="#d32f2f"
-        canUpdate={canUpdate}
-        onEdit={setEditingJob}
-        onAssign={setAssigningJob}
-        onViewDetails={setViewingJob}
-        onDispatch={setDispatchingJob}
-        onContinue={setContinuingJob}
-        onFinish={setFinishingJob}
-        onReturn={setReturningJob}
-      />
-
-      <WeekSection
-        title="This Week"
-        jobs={thisWeek}
-        employees={employees}
-        color="#4caf50"
-        canUpdate={canUpdate}
-        onEdit={setEditingJob}
-        onAssign={setAssigningJob}
-        onViewDetails={setViewingJob}
-        onDispatch={setDispatchingJob}
-        onContinue={setContinuingJob}
-        onFinish={setFinishingJob}
-        onReturn={setReturningJob}
-      />
-
-      <WeekSection
-        title="Next Week"
-        jobs={nextWeek}
-        employees={employees}
-        color="#2196f3"
-        canUpdate={canUpdate}
-        onEdit={setEditingJob}
-        onAssign={setAssigningJob}
-        onViewDetails={setViewingJob}
-        onDispatch={setDispatchingJob}
-        onContinue={setContinuingJob}
-        onFinish={setFinishingJob}
-        onReturn={setReturningJob}
-      />
-
-      <WeekSection
-        title="Later"
-        jobs={later}
-        employees={employees}
-        color="#9c27b0"
-        canUpdate={canUpdate}
-        onEdit={setEditingJob}
-        onAssign={setAssigningJob}
-        onViewDetails={setViewingJob}
-        onDispatch={setDispatchingJob}
-        onContinue={setContinuingJob}
-        onFinish={setFinishingJob}
-        onReturn={setReturningJob}
-      />
-
-      <WeekSection
-        title="Potential Returns"
-        jobs={potentialReturns}
-        employees={employees}
-        color="#ff9800"
-        canUpdate={canUpdate}
-        onEdit={setEditingJob}
-        onAssign={setAssigningJob}
-        onViewDetails={setViewingJob}
-        onDispatch={setDispatchingJob}
-        onContinue={setContinuingJob}
-        onFinish={setFinishingJob}
-        onReturn={setReturningJob}
-      />
-
-      {jobs.filter(j => !j.hideFromSummary).length === 0 && (
-        <div className="empty-state">
-          <h3>No active jobs found</h3>
-          <p>All jobs have been completed or archived</p>
-        </div>
-      )}
-
-      {editingJob && (
-        <EditJobModal
-          job={editingJob}
-          onClose={() => setEditingJob(null)}
-          onSave={() => {
-            setEditingJob(null);
-            loadJobs();
-          }}
-        />
-      )}
-
-      {assigningJob && (
-        <AssignEmployeesModal
-          job={assigningJob}
-          onClose={() => setAssigningJob(null)}
-          onSave={() => {
-            setAssigningJob(null);
-            loadJobs();
-          }}
-        />
-      )}
-
-      {viewingJob && (
-        <JobDetailsModal
-          job={viewingJob}
-          permissions={permissions}
-          onClose={() => setViewingJob(null)}
-          onUpdate={() => {
-            setViewingJob(null);
-            loadJobs();
-          }}
-        />
-      )}
-
-      {showCreateModal && (
-        <CreateJobModal
-          onClose={() => setShowCreateModal(false)}
-          onSave={() => {
-            setShowCreateModal(false);
-            loadJobs();
-          }}
-        />
-      )}
-
-      {dispatchingJob && (
-        <DispatchFlaggersModal
-          job={dispatchingJob}
-          onClose={() => setDispatchingJob(null)}
-          onSave={() => {
-            setDispatchingJob(null);
-            loadJobs();
-          }}
-        />
-      )}
-
-      {continuingJob && (
-        <ContinueJobModal
-          job={continuingJob}
-          onClose={() => setContinuingJob(null)}
-          onSave={() => {
-            setContinuingJob(null);
-            loadJobs();
-          }}
-        />
-      )}
-
-      {finishingJob && (
-        <FinishJobModal
-          job={finishingJob}
-          onClose={() => setFinishingJob(null)}
-          onSave={() => {
-            setFinishingJob(null);
-            loadJobs();
-          }}
-        />
-      )}
-
-      {returningJob && (
-        <ReturnJobModal
-          job={returningJob}
-          onClose={() => setReturningJob(null)}
-          onSave={() => {
-            setReturningJob(null);
-            loadJobs();
-          }}
-        />
-      )}
+    <div className="loading-screen">
+      <div className="spinner"></div>
+      <p>Loading jobs...</p>
     </div>
   );
+}
+
+return (
+  <div>
+    <div className="jobs-header">
+      <h2>Jobs</h2>
+      <div className="jobs-actions">
+        {canUpdate && (
+          <button onClick={() => setShowCreateModal(true)} className="btn btn-primary">
+            + New Job
+          </button>
+        )}
+        <button onClick={loadJobs} className="btn btn-secondary">
+          Refresh
+        </button>
+      </div>
+    </div>
+
+    <WeekSection
+      title="Broken Jobs"
+      jobs={brokenJobs}
+      employees={employees}
+      color="#d32f2f"
+      canUpdate={canUpdate}
+      onEdit={setEditingJob}
+      onAssign={setAssigningJob}
+      onViewDetails={setViewingJob}
+      onDispatch={setDispatchingJob}
+	  onContinue={setContinuingJob}
+	  onFinish={setFinishingJob}
+	  onReturn={setReturningJob}
+    />
+
+    <WeekSection
+      title="This Week"
+      jobs={thisWeek}
+      employees={employees}
+      color="#4caf50"
+      canUpdate={canUpdate}
+      onEdit={setEditingJob}
+      onAssign={setAssigningJob}
+      onViewDetails={setViewingJob}
+      onDispatch={setDispatchingJob}
+	  onContinue={setContinuingJob}
+	  onFinish={setFinishingJob}
+	  onReturn={setReturningJob}
+    />
+
+    <WeekSection
+      title="Next Week"
+      jobs={nextWeek}
+      employees={employees}
+      color="#2196f3"
+      canUpdate={canUpdate}
+      onEdit={setEditingJob}
+      onAssign={setAssigningJob}
+      onViewDetails={setViewingJob}
+      onDispatch={setDispatchingJob}
+	  onContinue={setContinuingJob}
+	  onFinish={setFinishingJob}
+	  onReturn={setReturningJob}
+    />
+
+    <WeekSection
+      title="Later"
+      jobs={later}
+      employees={employees}
+      color="#9c27b0"
+      canUpdate={canUpdate}
+      onEdit={setEditingJob}
+      onAssign={setAssigningJob}
+      onViewDetails={setViewingJob}
+      onDispatch={setDispatchingJob}
+	  onContinue={setContinuingJob}
+	  onFinish={setFinishingJob}
+	  onReturn={setReturningJob}
+    />
+
+    <WeekSection
+      title="Potential Returns"
+      jobs={potentialReturns}
+      employees={employees}
+      color="#ff9800"
+      canUpdate={canUpdate}
+      onEdit={setEditingJob}
+      onAssign={setAssigningJob}
+      onViewDetails={setViewingJob}
+      onDispatch={setDispatchingJob}
+	  onContinue={setContinuingJob}
+	  onFinish={setFinishingJob}
+	  onReturn={setReturningJob}
+    />
+
+    {jobs.filter(j => !j.hideFromSummary).length === 0 && (
+      <div className="empty-state">
+        <h3>No jobs found</h3>
+        <p>Create your first job to get started</p>
+      </div>
+    )}
+
+    {editingJob && (
+      <EditJobModal
+        job={editingJob}
+        onClose={() => setEditingJob(null)}
+        onSave={() => {
+          setEditingJob(null);
+          loadJobs();
+        }}
+      />
+    )}
+
+    {assigningJob && (
+      <AssignEmployeesModal
+        job={assigningJob}
+        onClose={() => setAssigningJob(null)}
+        onSave={() => {
+          setAssigningJob(null);
+          loadJobs();
+        }}
+      />
+    )}
+
+    {viewingJob && (
+      <JobDetailsModal
+        job={viewingJob}
+        permissions={permissions}
+        onClose={() => setViewingJob(null)}
+        onUpdate={() => {
+          setViewingJob(null);
+          loadJobs();
+        }}
+      />
+    )}
+	
+	{showCreateModal && (
+  <CreateJobModal
+    onClose={() => setShowCreateModal(false)}
+    onSave={() => {
+      setShowCreateModal(false);
+      loadJobs();
+    }}
+  />
+)}
+
+    {dispatchingJob && (
+      <DispatchFlaggersModal
+        job={dispatchingJob}
+        onClose={() => setDispatchingJob(null)}
+        onSave={() => {
+          setDispatchingJob(null);
+          loadJobs();
+        }}
+      />
+    )}
+	{continuingJob && (
+  <ContinueJobModal
+    job={continuingJob}
+    onClose={() => setContinuingJob(null)}
+    onSave={() => {
+      setContinuingJob(null);
+      loadJobs();
+    }}
+  />
+)}
+{finishingJob && (
+  <FinishJobModal
+    job={finishingJob}
+    onClose={() => setFinishingJob(null)}
+    onSave={() => {
+      setFinishingJob(null);
+      loadJobs();
+    }}
+  />
+)}
+{returningJob && (
+  <ReturnJobModal
+    job={returningJob}
+    onClose={() => setReturningJob(null)}
+    onSave={() => {
+      setReturningJob(null);
+      loadJobs();
+    }}
+  />
+)}
+  </div>
+);
 }
 
 function WeekSection({ title, jobs, employees, color, canUpdate, onEdit, onAssign, onViewDetails, onDispatch, onContinue, onFinish, onReturn }) {
@@ -358,9 +358,9 @@ function WeekSection({ title, jobs, employees, color, canUpdate, onEdit, onAssig
           onAssign={onAssign}
           onViewDetails={onViewDetails}
           onDispatch={onDispatch}
-          onContinue={onContinue}
-          onFinish={onFinish}
-          onReturn={onReturn}
+		  onContinue={onContinue}
+		  onFinish={onFinish}
+		  onReturn={onReturn}
         />
       ))}
     </div>
@@ -406,9 +406,9 @@ function DateGroup({ date, jobs, employees, canUpdate, onEdit, onAssign, onViewD
             onAssign={onAssign}
             onViewDetails={onViewDetails}
             onDispatch={onDispatch}
-            onContinue={onContinue}
-            onFinish={onFinish}
-            onReturn={onReturn}
+			onContinue={onContinue}
+			onFinish={onFinish}
+			onReturn={onReturn}
           />
         ))}
       </div>
@@ -421,7 +421,7 @@ function JobRow({ job, employees, canUpdate, onEdit, onAssign, onViewDetails, on
   
   useEffect(() => {
     if (job.equipmentCarrier && employees.length > 0) {
-      // Use cached employees instead of loading again!
+      // USE CACHED EMPLOYEES - NO FIRESTORE CALL!
       const carriers = job.equipmentCarrier.split(',').map(name => name.trim());
       const carrierData = carriers.map(carrierName => {
         return employees.find(emp => emp.fullName === carrierName);
@@ -551,66 +551,66 @@ function JobRow({ job, employees, canUpdate, onEdit, onAssign, onViewDetails, on
       </div>
 
       {canUpdate && (
-        <div style={{ flex: '0 0 420px', display: 'flex', gap: '4px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-          <button 
-            onClick={(e) => {
-              e.stopPropagation();
-              onFinish(job);
-            }}
-            className="btn btn-secondary btn-small"
-            style={{ background: '#d32f2f', color: 'white' }}
-          >
-            Finish
-          </button>
-          <button 
-            onClick={(e) => {
-              e.stopPropagation();
-              onReturn(job);
-            }}
-            className="btn btn-secondary btn-small"
-            style={{ background: '#ff9800', color: 'white' }}
-          >
-            Return
-          </button>
-          <button 
-            onClick={(e) => {
-              e.stopPropagation();
-              onContinue(job);
-            }}
-            className="btn btn-secondary btn-small"
-            style={{ background: '#4caf50', color: 'white' }}
-          >
-            Continue
-          </button>
-          <button 
-            onClick={(e) => {
-              e.stopPropagation();
-              onDispatch(job);
-            }}
-            className="btn btn-secondary btn-small"
-          >
-            Dispatch
-          </button>
-          <button 
-            onClick={(e) => {
-              e.stopPropagation();
-              onAssign(job);
-            }}
-            className="btn btn-secondary btn-small"
-          >
-            Assign
-          </button>
-          <button 
-            onClick={(e) => {
-              e.stopPropagation();
-              onEdit(job);
-            }}
-            className="btn btn-secondary btn-small"
-          >
-            Edit
-          </button>
-        </div>
-      )}
+  <div style={{ flex: '0 0 420px', display: 'flex', gap: '4px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+    <button 
+      onClick={(e) => {
+        e.stopPropagation();
+        onFinish(job);
+      }}
+      className="btn btn-secondary btn-small"
+      style={{ background: '#d32f2f', color: 'white' }}
+    >
+      Finish
+    </button>
+    <button 
+      onClick={(e) => {
+        e.stopPropagation();
+        onReturn(job);
+      }}
+      className="btn btn-secondary btn-small"
+      style={{ background: '#ff9800', color: 'white' }}
+    >
+      Return
+    </button>
+    <button 
+      onClick={(e) => {
+        e.stopPropagation();
+        onContinue(job);
+      }}
+      className="btn btn-secondary btn-small"
+      style={{ background: '#4caf50', color: 'white' }}
+    >
+      Continue
+    </button>
+    <button 
+      onClick={(e) => {
+        e.stopPropagation();
+        onDispatch(job);
+      }}
+      className="btn btn-secondary btn-small"
+    >
+      Dispatch
+    </button>
+    <button 
+      onClick={(e) => {
+        e.stopPropagation();
+        onAssign(job);
+      }}
+      className="btn btn-secondary btn-small"
+    >
+      Assign
+    </button>
+    <button 
+      onClick={(e) => {
+        e.stopPropagation();
+        onEdit(job);
+      }}
+      className="btn btn-secondary btn-small"
+    >
+      Edit
+    </button>
+  </div>
+)}
     </div>
   );
 }
