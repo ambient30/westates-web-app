@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs } from '../utils/firestoreTracker';
 import { db } from '../firebase';
 
 function PinksView({ permissions }) {

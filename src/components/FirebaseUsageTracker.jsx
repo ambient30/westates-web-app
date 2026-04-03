@@ -1,21 +1,25 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { db } from '../firebase';
 
 /**
- * Manual Firebase Usage Tracker
+ * Firebase Usage Tracker - Real-Time Version
  * 
- * How to use:
- * 1. Check Firebase Console daily/weekly
- * 2. Update the numbers in firebaseUsageConfig.js
- * 3. Dashboard automatically shows the updated numbers with color-coded alerts
+ * Listens to Firestore changes and updates in real-time
+ * Shows live usage metrics as operations happen
  * 
- * No Firestore calls = Zero overhead
+ * Features:
+ * - Real-time updates (no refresh needed)
+ * - Color-coded alerts
+ * - Live percentage calculations
+ * - Auto-updates every 10 seconds as operations are tracked
  */
 
-// Import configuration (you'll create this file)
-import { FIREBASE_USAGE_CONFIG } from '../config/firebaseUsageConfig';
-
 function FirebaseUsageTracker() {
+  const [usage, setUsage] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [showSettings, setShowSettings] = useState(false);
+  const [isLive, setIsLive] = useState(false);
 
   const LIMITS = {
     reads: 50000,
@@ -23,13 +27,60 @@ function FirebaseUsageTracker() {
     deletes: 20000
   };
 
-  // Get today's usage from config
-  const usage = FIREBASE_USAGE_CONFIG.current || {
-    reads: 0,
-    writes: 0,
-    deletes: 0,
-    lastUpdated: 'Never'
-  };
+  useEffect(() => {
+    // Set up real-time listener
+    const unsubscribe = onSnapshot(
+      doc(db, 'settings', 'firebaseUsage'),
+      (snapshot) => {
+        if (snapshot.exists()) {
+          setUsage(snapshot.data());
+          setIsLive(true);
+        } else {
+          // Default if not set up yet
+          setUsage({
+            reads: 0,
+            writes: 0,
+            deletes: 0,
+            lastUpdated: 'Not configured',
+            alertThresholds: {
+              caution: 50,
+              warning: 75,
+              critical: 90
+            }
+          });
+          setIsLive(false);
+        }
+        setLoading(false);
+      },
+      (error) => {
+        console.error('Error listening to usage updates:', error);
+        setUsage({
+          reads: 0,
+          writes: 0,
+          deletes: 0,
+          lastUpdated: 'Error',
+          alertThresholds: {
+            caution: 50,
+            warning: 75,
+            critical: 90
+          }
+        });
+        setIsLive(false);
+        setLoading(false);
+      }
+    );
+
+    // Cleanup listener on unmount
+    return () => unsubscribe();
+  }, []);
+
+  if (loading || !usage) {
+    return (
+      <div style={{ fontSize: '12px', color: '#9e9e9e' }}>
+        Loading usage...
+      </div>
+    );
+  }
 
   const getPercentage = (value, limit) => {
     return ((value / limit) * 100).toFixed(1);
@@ -37,7 +88,7 @@ function FirebaseUsageTracker() {
 
   const getStatusColor = (value, limit) => {
     const percent = (value / limit) * 100;
-    const thresholds = FIREBASE_USAGE_CONFIG.alertThresholds;
+    const thresholds = usage.alertThresholds;
     
     if (percent >= thresholds.critical) return '#d32f2f'; // Red - critical
     if (percent >= thresholds.warning) return '#ff9800'; // Orange - warning
@@ -47,7 +98,7 @@ function FirebaseUsageTracker() {
 
   const getStatusLabel = (value, limit) => {
     const percent = (value / limit) * 100;
-    const thresholds = FIREBASE_USAGE_CONFIG.alertThresholds;
+    const thresholds = usage.alertThresholds;
     
     if (percent >= thresholds.critical) return 'CRITICAL';
     if (percent >= thresholds.warning) return 'WARNING';
@@ -57,26 +108,6 @@ function FirebaseUsageTracker() {
 
   const formatNumber = (num) => {
     return num.toLocaleString();
-  };
-
-  const copyConfigTemplate = () => {
-    const template = `// Copy today's numbers from Firebase Console and paste them here
-export const FIREBASE_USAGE_CONFIG = {
-  current: {
-    reads: ${usage.reads},
-    writes: ${usage.writes},
-    deletes: ${usage.deletes},
-    lastUpdated: '${new Date().toLocaleDateString('en-US', { timeZone: 'America/Los_Angeles' })}'
-  },
-  alertThresholds: {
-    caution: 50,  // Yellow alert at 50%
-    warning: 75,  // Orange alert at 75%
-    critical: 90  // Red alert at 90%
-  }
-};`;
-    
-    navigator.clipboard.writeText(template);
-    alert('Config template copied to clipboard! Paste in /src/config/firebaseUsageConfig.js');
   };
 
   return (
@@ -91,6 +122,25 @@ export const FIREBASE_USAGE_CONFIG = {
         borderRadius: '4px',
         border: '1px solid #e0e0e0'
       }}>
+        {/* Live indicator */}
+        {isLive && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <div style={{
+              width: '8px',
+              height: '8px',
+              borderRadius: '50%',
+              background: '#4caf50',
+              animation: 'pulse 2s infinite'
+            }} />
+            <style>{`
+              @keyframes pulse {
+                0%, 100% { opacity: 1; }
+                50% { opacity: 0.5; }
+              }
+            `}</style>
+          </div>
+        )}
+
         {/* Reads */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
           <span style={{ fontWeight: '600', color: '#5f6368' }}>Reads:</span>
@@ -216,6 +266,27 @@ export const FIREBASE_USAGE_CONFIG = {
           </div>
 
           <div style={{ fontSize: '12px', color: '#5f6368', marginBottom: '12px' }}>
+            <div style={{ 
+              marginBottom: '12px',
+              padding: '8px',
+              background: '#e8f5e9',
+              borderRadius: '4px',
+              border: '1px solid #4caf50'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{
+                  width: '8px',
+                  height: '8px',
+                  borderRadius: '50%',
+                  background: '#4caf50'
+                }} />
+                <strong style={{ color: '#2e7d32' }}>Real-Time Tracking Active</strong>
+              </div>
+              <div style={{ fontSize: '11px', marginTop: '4px', color: '#5f6368' }}>
+                Numbers update automatically every 10 seconds
+              </div>
+            </div>
+
             <div style={{ marginBottom: '8px' }}>
               <strong>Last Updated:</strong> {usage.lastUpdated}
             </div>
@@ -224,10 +295,10 @@ export const FIREBASE_USAGE_CONFIG = {
               <strong>Alert Thresholds:</strong>
             </div>
             <div style={{ paddingLeft: '12px', marginBottom: '8px' }}>
-              <div style={{ color: '#4caf50' }}>✓ Safe: &lt; {FIREBASE_USAGE_CONFIG.alertThresholds.caution}%</div>
-              <div style={{ color: '#fbc02d' }}>⚠ Caution: {FIREBASE_USAGE_CONFIG.alertThresholds.caution}%-{FIREBASE_USAGE_CONFIG.alertThresholds.warning - 1}%</div>
-              <div style={{ color: '#ff9800' }}>⚠ Warning: {FIREBASE_USAGE_CONFIG.alertThresholds.warning}%-{FIREBASE_USAGE_CONFIG.alertThresholds.critical - 1}%</div>
-              <div style={{ color: '#d32f2f' }}>🚨 Critical: ≥ {FIREBASE_USAGE_CONFIG.alertThresholds.critical}%</div>
+              <div style={{ color: '#4caf50' }}>✓ Safe: &lt; {usage.alertThresholds.caution}%</div>
+              <div style={{ color: '#fbc02d' }}>⚠ Caution: {usage.alertThresholds.caution}%-{usage.alertThresholds.warning - 1}%</div>
+              <div style={{ color: '#ff9800' }}>⚠ Warning: {usage.alertThresholds.warning}%-{usage.alertThresholds.critical - 1}%</div>
+              <div style={{ color: '#d32f2f' }}>🚨 Critical: ≥ {usage.alertThresholds.critical}%</div>
             </div>
 
             <div style={{ marginBottom: '8px' }}>
@@ -253,30 +324,14 @@ export const FIREBASE_USAGE_CONFIG = {
             color: '#5f6368'
           }}>
             <div style={{ marginBottom: '8px' }}>
-              <strong>How to update numbers:</strong>
+              <strong>How it works:</strong>
             </div>
-            <ol style={{ margin: '0 0 8px 0', paddingLeft: '20px' }}>
-              <li>Go to Firebase Console → Usage tab</li>
-              <li>Copy today's read/write/delete counts</li>
-              <li>Update <code>/src/config/firebaseUsageConfig.js</code></li>
-              <li>Refresh page to see new numbers</li>
-            </ol>
-            
-            <button
-              onClick={copyConfigTemplate}
-              style={{
-                background: '#1a73e8',
-                color: 'white',
-                border: 'none',
-                padding: '6px 12px',
-                borderRadius: '4px',
-                cursor: 'pointer',
-                fontSize: '11px',
-                width: '100%'
-              }}
-            >
-              📋 Copy Config Template
-            </button>
+            <ul style={{ margin: '0 0 8px 0', paddingLeft: '20px' }}>
+              <li>All Firestore operations are tracked automatically</li>
+              <li>Numbers update in real-time (every 10 seconds)</li>
+              <li>Counters reset automatically at midnight Pacific</li>
+              <li>No manual updates needed!</li>
+            </ul>
           </div>
         </div>
       )}

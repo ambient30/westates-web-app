@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
-import { collection, getDocs, query, where } from 'firebase/firestore';
+import { collection, getDocs, query, where } from '../utils/firestoreTracker';
 import { db } from '../firebase';
 import { hasPermission } from '../utils/permissions';
-import { logFirestoreOperation } from '../utils/firebaseUsageLogger';
 import EditJobModal from './EditJobModal';
 import AssignEmployeesModal from './AssignEmployeesModal';
 import JobDetailsModal from './JobDetailsModal';
@@ -41,11 +40,7 @@ function JobsList({ permissions }) {
         where('hideFromSummary', '!=', true)
       );
       
-      const querySnapshot = await getDocs(jobsQuery);
-      
-      // LOG THE JOB READS
-      await logFirestoreOperation('reads', querySnapshot.docs.length);
-      
+      const querySnapshot = await getDocs(jobsQuery);      
       const jobsData = querySnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
@@ -55,10 +50,6 @@ function JobsList({ permissions }) {
       
       // OPTIMIZATION 2: Load ALL employees ONCE and cache
       const employeesSnap = await getDocs(collection(db, 'employees'));
-      
-      // LOG THE EMPLOYEE READS
-      await logFirestoreOperation('reads', employeesSnap.docs.length);
-      
       const employeesData = employeesSnap.docs.map(doc => ({ 
         id: doc.id, 
         ...doc.data() 

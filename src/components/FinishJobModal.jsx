@@ -1,4 +1,4 @@
-import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, updateDoc, serverTimestamp } from '../utils/firestoreTracker';
 import { db, auth } from '../firebase';
 import { logAudit } from '../utils/auditLog';
 import { useState } from 'react';

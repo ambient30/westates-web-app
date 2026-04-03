@@ -44,7 +44,7 @@ Direct links to raw source files for easy access:
 
 ## Other Views
 - [PinksView.jsx] (https://raw.githubusercontent.com/ambient30/westates-web-app/refs/heads/main/src/components/PinksView.jsx)
-- [SettingsView.jsx] https://raw.githubusercontent.com/ambient30/westates-web-app/refs/heads/main/src/utils/SettingsView.jsx)
+- [SettingsView.jsx] https://raw.githubusercontent.com/ambient30/westates-web-app/refs/heads/main/src/components/SettingsView.jsx)
 
 ## Utilities
 - [FirstTimeSetup.jsx] (https://raw.githubusercontent.com/ambient30/westates-web-app/refs/heads/main/src/components/FirstTimeSetup.jsx)

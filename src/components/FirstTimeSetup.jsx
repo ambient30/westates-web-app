@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc } from '../utils/firestoreTracker';
 import { db } from '../firebase';
 import { ownerPermissions } from '../utils/permissions';
 

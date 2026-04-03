@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, getDoc } from '../utils/firestoreTracker';
 import { db } from '../firebase';
 import DailyMinimumModal from './DailyMinimumModal';
 

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { collection, addDoc, updateDoc, doc, serverTimestamp, getDocs } from 'firebase/firestore';
+import { collection, addDoc, updateDoc, doc, serverTimestamp, getDocs } from '../utils/firestoreTracker';
 import { db, auth } from '../firebase';
 import { logAudit } from '../utils/auditLog';
 import ContinueJobModal from './ContinueJobModal';

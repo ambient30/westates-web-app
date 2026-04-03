@@ -18,8 +18,8 @@
 export const FIREBASE_USAGE_CONFIG = {
   // Current day's usage (update these manually from Firebase Console)
   current: {
-    reads: 7200,        // ← Update this from Firebase Console
-    writes: 35,         // ← Update this from Firebase Console
+    reads: 7800,        // ← Update this from Firebase Console
+    writes: 41,         // ← Update this from Firebase Console
     deletes: 0,         // ← Update this from Firebase Console
     lastUpdated: '4/2/2026'  // ← Update this to today's date
   },

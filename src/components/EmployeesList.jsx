@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs } from '../utils/firestoreTracker';
 import { db } from '../firebase';
 import { hasPermission } from '../utils/permissions';
-import { logFirestoreOperation } from '../utils/firebaseUsageLogger';
 import CreateEmployeeModal from './CreateEmployeeModal';
 import EditEmployeeModal from './EditEmployeeModal';
 
@@ -27,10 +26,7 @@ function EmployeesList({ permissions }) {
       setLoading(true);
       const employeesRef = collection(db, 'employees');
       const snapshot = await getDocs(employeesRef);
-      
-      // LOG THE READS
-      await logFirestoreOperation('reads', snapshot.docs.length);
-      
+
       let employeesData = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
