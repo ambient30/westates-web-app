@@ -24,7 +24,6 @@ function JobsList({ permissions }) {
   const [returningJob, setReturningJob] = useState(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   
-  // Track which equipment carriers we're listening to
   const [activeCarriers, setActiveCarriers] = useState(new Set());
   const [employeeUnsubscribers, setEmployeeUnsubscribers] = useState({});
 
@@ -33,7 +32,6 @@ function JobsList({ permissions }) {
   useEffect(() => {
     console.log('🔴 Setting up REAL-TIME listener for jobs...');
     
-    // REAL-TIME listener for jobs
     const jobsQuery = query(
       collection(db, 'jobs'),
       where('hideFromSummary', '!=', true)
@@ -51,7 +49,6 @@ function JobsList({ permissions }) {
         
         setJobs(jobsData);
         
-        // Extract equipment carriers from updated jobs
         const carriers = new Set();
         jobsData.forEach(job => {
           if (job.equipmentCarrier) {
@@ -60,9 +57,7 @@ function JobsList({ permissions }) {
           }
         });
         
-        // Update equipment carrier listeners
         updateEmployeeListeners(carriers);
-        
         setLoading(false);
       },
       (error) => {
@@ -71,24 +66,17 @@ function JobsList({ permissions }) {
       }
     );
     
-    // Cleanup on unmount
     return () => {
       console.log('🔴 Cleaning up jobs listener');
       unsubscribe();
-      // Clean up all employee listeners
       Object.values(employeeUnsubscribers).forEach(unsub => unsub());
     };
   }, []);
 
-  // Manage real-time listeners for equipment carrier employees
   const updateEmployeeListeners = (newCarriers) => {
-    // Find carriers to add
     const toAdd = [...newCarriers].filter(name => !activeCarriers.has(name));
-    
-    // Find carriers to remove
     const toRemove = [...activeCarriers].filter(name => !newCarriers.has(name));
     
-    // Remove old listeners
     toRemove.forEach(name => {
       if (employeeUnsubscribers[name]) {
         console.log(`🔴 Removing listener for employee: ${name}`);
@@ -99,11 +87,9 @@ function JobsList({ permissions }) {
       }
     });
     
-    // Add new listeners
     toAdd.forEach(name => {
       console.log(`🟢 Adding REAL-TIME listener for employee: ${name}`);
       
-      // Try direct doc access first
       const employeeRef = doc(db, 'employees', name);
       
       const unsubscribe = onSnapshot(
@@ -116,7 +102,6 @@ function JobsList({ permissions }) {
               return [...filtered, { id: docSnap.id, ...docSnap.data() }];
             });
           } else {
-            // Try querying by fullName if direct access fails
             const employeeQuery = query(
               collection(db, 'employees'),
               where('fullName', '==', name)
@@ -216,16 +201,21 @@ if (loading) {
 }
 
 return (
-  <div>
-    <div className="jobs-header">
-      <h2>Jobs</h2>
-      <div className="jobs-actions">
+  <div style={{ padding: '12px' }}>
+    <div style={{ 
+      display: 'flex', 
+      justifyContent: 'space-between', 
+      alignItems: 'center',
+      marginBottom: '16px'
+    }}>
+      <h2 style={{ margin: 0, fontSize: '20px' }}>Jobs</h2>
+      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
         {canUpdate && (
           <button onClick={() => setShowCreateModal(true)} className="btn btn-primary">
             + New Job
           </button>
         )}
-        <div style={{ fontSize: '12px', color: '#4caf50', marginLeft: '12px' }}>
+        <div style={{ fontSize: '11px', color: '#4caf50' }}>
           🟢 Live sync active
         </div>
       </div>
@@ -241,9 +231,9 @@ return (
       onAssign={setAssigningJob}
       onViewDetails={setViewingJob}
       onDispatch={setDispatchingJob}
-	  onContinue={setContinuingJob}
-	  onFinish={setFinishingJob}
-	  onReturn={setReturningJob}
+      onContinue={setContinuingJob}
+      onFinish={setFinishingJob}
+      onReturn={setReturningJob}
     />
 
     <WeekSection
@@ -256,9 +246,9 @@ return (
       onAssign={setAssigningJob}
       onViewDetails={setViewingJob}
       onDispatch={setDispatchingJob}
-	  onContinue={setContinuingJob}
-	  onFinish={setFinishingJob}
-	  onReturn={setReturningJob}
+      onContinue={setContinuingJob}
+      onFinish={setFinishingJob}
+      onReturn={setReturningJob}
     />
 
     <WeekSection
@@ -271,9 +261,9 @@ return (
       onAssign={setAssigningJob}
       onViewDetails={setViewingJob}
       onDispatch={setDispatchingJob}
-	  onContinue={setContinuingJob}
-	  onFinish={setFinishingJob}
-	  onReturn={setReturningJob}
+      onContinue={setContinuingJob}
+      onFinish={setFinishingJob}
+      onReturn={setReturningJob}
     />
 
     <WeekSection
@@ -286,9 +276,9 @@ return (
       onAssign={setAssigningJob}
       onViewDetails={setViewingJob}
       onDispatch={setDispatchingJob}
-	  onContinue={setContinuingJob}
-	  onFinish={setFinishingJob}
-	  onReturn={setReturningJob}
+      onContinue={setContinuingJob}
+      onFinish={setFinishingJob}
+      onReturn={setReturningJob}
     />
 
     <WeekSection
@@ -301,9 +291,9 @@ return (
       onAssign={setAssigningJob}
       onViewDetails={setViewingJob}
       onDispatch={setDispatchingJob}
-	  onContinue={setContinuingJob}
-	  onFinish={setFinishingJob}
-	  onReturn={setReturningJob}
+      onContinue={setContinuingJob}
+      onFinish={setFinishingJob}
+      onReturn={setReturningJob}
     />
 
     {jobs.filter(j => !j.hideFromSummary).length === 0 && (
@@ -319,7 +309,6 @@ return (
         onClose={() => setEditingJob(null)}
         onSave={() => {
           setEditingJob(null);
-          // No manual reload needed - onSnapshot handles it!
         }}
       />
     )}
@@ -330,7 +319,6 @@ return (
         onClose={() => setAssigningJob(null)}
         onSave={() => {
           setAssigningJob(null);
-          // No manual reload needed - onSnapshot handles it!
         }}
       />
     )}
@@ -342,20 +330,18 @@ return (
         onClose={() => setViewingJob(null)}
         onUpdate={() => {
           setViewingJob(null);
-          // No manual reload needed - onSnapshot handles it!
         }}
       />
     )}
-	
-	{showCreateModal && (
-  <CreateJobModal
-    onClose={() => setShowCreateModal(false)}
-    onSave={() => {
-      setShowCreateModal(false);
-      // No manual reload needed - onSnapshot handles it!
-    }}
-  />
-)}
+
+    {showCreateModal && (
+      <CreateJobModal
+        onClose={() => setShowCreateModal(false)}
+        onSave={() => {
+          setShowCreateModal(false);
+        }}
+      />
+    )}
 
     {dispatchingJob && (
       <DispatchFlaggersModal
@@ -363,40 +349,39 @@ return (
         onClose={() => setDispatchingJob(null)}
         onSave={() => {
           setDispatchingJob(null);
-          // No manual reload needed - onSnapshot handles it!
         }}
       />
     )}
-	{continuingJob && (
-  <ContinueJobModal
-    job={continuingJob}
-    onClose={() => setContinuingJob(null)}
-    onSave={() => {
-      setContinuingJob(null);
-      // No manual reload needed - onSnapshot handles it!
-    }}
-  />
-)}
-{finishingJob && (
-  <FinishJobModal
-    job={finishingJob}
-    onClose={() => setFinishingJob(null)}
-    onSave={() => {
-      setFinishingJob(null);
-      // No manual reload needed - onSnapshot handles it!
-    }}
-  />
-)}
-{returningJob && (
-  <ReturnJobModal
-    job={returningJob}
-    onClose={() => setReturningJob(null)}
-    onSave={() => {
-      setReturningJob(null);
-      // No manual reload needed - onSnapshot handles it!
-    }}
-  />
-)}
+
+    {continuingJob && (
+      <ContinueJobModal
+        job={continuingJob}
+        onClose={() => setContinuingJob(null)}
+        onSave={() => {
+          setContinuingJob(null);
+        }}
+      />
+    )}
+
+    {finishingJob && (
+      <FinishJobModal
+        job={finishingJob}
+        onClose={() => setFinishingJob(null)}
+        onSave={() => {
+          setFinishingJob(null);
+        }}
+      />
+    )}
+
+    {returningJob && (
+      <ReturnJobModal
+        job={returningJob}
+        onClose={() => setReturningJob(null)}
+        onSave={() => {
+          setReturningJob(null);
+        }}
+      />
+    )}
   </div>
 );
 }
@@ -418,14 +403,15 @@ function WeekSection({ title, jobs, employees, color, canUpdate, onEdit, onAssig
   });
 
   return (
-    <div style={{ marginBottom: '32px' }}>
+    <div style={{ marginBottom: '20px' }}>
+      {/* Section header - smaller */}
       <div style={{ 
         background: color,
-        padding: '16px 20px',
-        borderRadius: '8px',
-        marginBottom: '16px'
+        padding: '8px 12px',
+        borderRadius: '4px',
+        marginBottom: '8px'
       }}>
-        <h3 style={{ fontSize: '18px', fontWeight: '500', color: 'white', margin: 0 }}>
+        <h3 style={{ fontSize: '14px', fontWeight: '600', color: 'white', margin: 0 }}>
           {title}
         </h3>
       </div>
@@ -441,9 +427,9 @@ function WeekSection({ title, jobs, employees, color, canUpdate, onEdit, onAssig
           onAssign={onAssign}
           onViewDetails={onViewDetails}
           onDispatch={onDispatch}
-		  onContinue={onContinue}
-		  onFinish={onFinish}
-		  onReturn={onReturn}
+          onContinue={onContinue}
+          onFinish={onFinish}
+          onReturn={onReturn}
         />
       ))}
     </div>
@@ -461,19 +447,20 @@ function DateGroup({ date, jobs, employees, canUpdate, onEdit, onAssign, onViewD
   };
 
   return (
-    <div style={{ marginBottom: '24px' }}>
+    <div style={{ marginBottom: '12px' }}>
       <div style={{
         background: 'white',
-        borderRadius: '8px',
+        borderRadius: '4px',
         overflow: 'hidden',
         border: '1px solid #e0e0e0'
       }}>
+        {/* Date header - smaller */}
         <div style={{
           background: '#f8f9fa',
-          padding: '12px 16px',
+          padding: '6px 10px',
           borderBottom: '1px solid #e0e0e0',
           fontWeight: '600',
-          fontSize: '14px',
+          fontSize: '12px',
           color: '#5f6368'
         }}>
           {formatDate(date)}
@@ -489,9 +476,9 @@ function DateGroup({ date, jobs, employees, canUpdate, onEdit, onAssign, onViewD
             onAssign={onAssign}
             onViewDetails={onViewDetails}
             onDispatch={onDispatch}
-			onContinue={onContinue}
-			onFinish={onFinish}
-			onReturn={onReturn}
+            onContinue={onContinue}
+            onFinish={onFinish}
+            onReturn={onReturn}
           />
         ))}
       </div>
@@ -523,27 +510,43 @@ function JobRow({ job, employees, canUpdate, onEdit, onAssign, onViewDetails, on
   const amountOfFlaggers = parseInt(job.amountOfFlaggers) || 0;
   const placeholdersNeeded = Math.max(0, amountOfFlaggers - assignedFlaggers.length);
 
-  const formatEquipmentCarrier = () => {
-    if (employeeData.length === 0) return '-';
+  // Format equipment requested for job
+  const formatEquipmentRequested = () => {
+    const equipment = [];
     
-    return employeeData.map(emp => {
-      const parts = [];
-      
-      if (emp.signs) parts.push(emp.signs);
-      if (emp.extraSigns) parts.push(emp.extraSigns);
-      if (emp.cones) parts.push(`${emp.cones} cones`);
-      
-      const nameParts = emp.fullName.trim().split(' ');
-      const firstName = nameParts[0];
-      const lastInitial = nameParts.length > 1 ? nameParts[nameParts.length - 1].charAt(0) : '';
-      const formattedName = lastInitial ? `${firstName} ${lastInitial}` : firstName;
-      
-      if (parts.length > 0) {
-        return `${formattedName} - ${parts.join(', ')}`;
-      } else {
-        return `${formattedName} - No equipment`;
-      }
-    }).join('\n');
+    // Add each equipment type only if it has a value and isn't 0
+    if (job.signSets && parseInt(job.signSets) > 0) {
+      equipment.push(`${job.signSets} set${parseInt(job.signSets) > 1 ? 's' : ''}`);
+    }
+    if (job.indvSigns && parseInt(job.indvSigns) > 0) {
+      equipment.push(job.indvSigns);
+    }
+    if (job.type2 && parseInt(job.type2) > 0) {
+      equipment.push(job.type2);
+    }
+    if (job.type3 && parseInt(job.type3) > 0) {
+      equipment.push(job.type3);
+    }
+    if (job.cones && parseInt(job.cones) > 0) {
+      equipment.push(`${job.cones} cones`);
+    }
+    if (job.balloonLights && parseInt(job.balloonLights) > 0) {
+      equipment.push(`${job.balloonLights} balloon light${parseInt(job.balloonLights) > 1 ? 's' : ''}`);
+    }
+    if (job.portableLights && parseInt(job.portableLights) > 0) {
+      equipment.push(`${job.portableLights} portable light${parseInt(job.portableLights) > 1 ? 's' : ''}`);
+    }
+    if (job.truck && parseInt(job.truck) > 0) {
+      equipment.push(`${job.truck} truck${parseInt(job.truck) > 1 ? 's' : ''}`);
+    }
+    
+    return equipment.length > 0 ? equipment.join(', ') : '-';
+  };
+
+  // Format equipment carriers
+  const formatEquipmentCarriers = () => {
+    if (!job.equipmentCarrier) return '-';
+    return job.equipmentCarrier;
   };
 
   const handleRowClick = (e) => {
@@ -554,11 +557,24 @@ function JobRow({ job, employees, canUpdate, onEdit, onAssign, onViewDetails, on
 
   return (
     <div 
-      className="job-row"
       onClick={handleRowClick}
+      style={{
+        display: 'grid',
+        gridTemplateColumns: '140px 60px 60px 80px 100px 100px 140px 1fr 140px 180px',
+        gap: '8px',
+        padding: '8px 10px',
+        borderBottom: '1px solid #f0f0f0',
+        fontSize: '12px',
+        alignItems: 'center',
+        cursor: 'pointer',
+        ':hover': {
+          background: '#fafafa'
+        }
+      }}
     >
-      <div style={{ flex: '0 0 180px', minWidth: '180px' }}>
-        <div style={{ fontWeight: '600', fontSize: '12px', color: '#5f6368', marginBottom: '4px' }}>
+      {/* Flaggers */}
+      <div>
+        <div style={{ fontWeight: '600', color: '#5f6368', marginBottom: '2px', fontSize: '11px' }}>
           Flaggers
         </div>
         {assignedFlaggers.map((flagger, idx) => {
@@ -569,7 +585,7 @@ function JobRow({ job, employees, canUpdate, onEdit, onAssign, onViewDetails, on
               style={{ 
                 color: isDispatched ? '#202124' : '#d32f2f',
                 fontWeight: isDispatched ? '400' : '600',
-                lineHeight: '1.4'
+                fontSize: '11px'
               }}
             >
               {flagger}
@@ -582,117 +598,165 @@ function JobRow({ job, employees, canUpdate, onEdit, onAssign, onViewDetails, on
             style={{ 
               color: '#9e9e9e',
               fontStyle: 'italic',
-              lineHeight: '1.4'
+              fontSize: '11px'
             }}
           >
             [Unassigned]
           </div>
         ))}
-        {assignedFlaggers.length === 0 && amountOfFlaggers === 0 && (
-          <div style={{ color: '#d32f2f', fontStyle: 'italic' }}>
-            No flaggers needed
-          </div>
-        )}
       </div>
 
-      <div style={{ flex: '0 0 80px' }}>
-        <div style={{ fontWeight: '600', fontSize: '12px', color: '#5f6368', marginBottom: '4px' }}>
+      {/* Job Length */}
+      <div>
+        <div style={{ fontWeight: '600', color: '#5f6368', marginBottom: '2px', fontSize: '11px' }}>
           Length
         </div>
         <div>{job.jobLength || '-'}</div>
       </div>
 
-      <div style={{ flex: '0 0 80px' }}>
-        <div style={{ fontWeight: '600', fontSize: '12px', color: '#5f6368', marginBottom: '4px' }}>
+      {/* Time */}
+      <div>
+        <div style={{ fontWeight: '600', color: '#5f6368', marginBottom: '2px', fontSize: '11px' }}>
           Time
         </div>
-        <div>{job.initialJobTime || 'TBD'}</div>
+        <div>{job.initialJobTime || '-'}</div>
       </div>
 
-      <div style={{ flex: '0 0 120px' }}>
-        <div style={{ fontWeight: '600', fontSize: '12px', color: '#5f6368', marginBottom: '4px' }}>
+      {/* Meet/Set */}
+      <div>
+        <div style={{ fontWeight: '600', color: '#5f6368', marginBottom: '2px', fontSize: '11px' }}>
+          Meet/Set
+        </div>
+        <div>{job.meetSet || '-'}</div>
+      </div>
+
+      {/* Caller */}
+      <div>
+        <div style={{ fontWeight: '600', color: '#5f6368', marginBottom: '2px', fontSize: '11px' }}>
+          Caller
+        </div>
+        <div>{job.caller || '-'}</div>
+      </div>
+
+      {/* Billing */}
+      <div>
+        <div style={{ fontWeight: '600', color: '#5f6368', marginBottom: '2px', fontSize: '11px' }}>
           Billing
         </div>
         <div>{job.billing || '-'}</div>
       </div>
 
-      <div style={{ flex: '1 1 200px', minWidth: '150px' }}>
-        <div style={{ fontWeight: '600', fontSize: '12px', color: '#5f6368', marginBottom: '4px' }}>
+      {/* Location */}
+      <div>
+        <div style={{ fontWeight: '600', color: '#5f6368', marginBottom: '2px', fontSize: '11px' }}>
           Location
         </div>
         <div>{job.location || '-'}</div>
       </div>
 
-      <div style={{ flex: '1 1 200px', minWidth: '150px' }}>
-        <div style={{ fontWeight: '600', fontSize: '12px', color: '#5f6368', marginBottom: '4px' }}>
+      {/* Equipment Requested */}
+      <div>
+        <div style={{ fontWeight: '600', color: '#5f6368', marginBottom: '2px', fontSize: '11px' }}>
           Equipment
         </div>
-        <div style={{ fontSize: '13px', whiteSpace: 'pre-line' }}>
-          {formatEquipmentCarrier()}
-        </div>
+        <div>{formatEquipmentRequested()}</div>
       </div>
 
+      {/* Equipment Carriers */}
+      <div>
+        <div style={{ fontWeight: '600', color: '#5f6368', marginBottom: '2px', fontSize: '11px' }}>
+          Carriers
+        </div>
+        <div>{formatEquipmentCarriers()}</div>
+      </div>
+
+      {/* Action Buttons */}
       {canUpdate && (
-  <div style={{ flex: '0 0 420px', display: 'flex', gap: '4px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-    <button 
-      onClick={(e) => {
-        e.stopPropagation();
-        onFinish(job);
-      }}
-      className="btn btn-secondary btn-small"
-      style={{ background: '#d32f2f', color: 'white' }}
-    >
-      Finish
-    </button>
-    <button 
-      onClick={(e) => {
-        e.stopPropagation();
-        onReturn(job);
-      }}
-      className="btn btn-secondary btn-small"
-      style={{ background: '#ff9800', color: 'white' }}
-    >
-      Return
-    </button>
-    <button 
-      onClick={(e) => {
-        e.stopPropagation();
-        onContinue(job);
-      }}
-      className="btn btn-secondary btn-small"
-      style={{ background: '#4caf50', color: 'white' }}
-    >
-      Continue
-    </button>
-    <button 
-      onClick={(e) => {
-        e.stopPropagation();
-        onDispatch(job);
-      }}
-      className="btn btn-secondary btn-small"
-    >
-      Dispatch
-    </button>
-    <button 
-      onClick={(e) => {
-        e.stopPropagation();
-        onAssign(job);
-      }}
-      className="btn btn-secondary btn-small"
-    >
-      Assign
-    </button>
-    <button 
-      onClick={(e) => {
-        e.stopPropagation();
-        onEdit(job);
-      }}
-      className="btn btn-secondary btn-small"
-    >
-      Edit
-    </button>
-  </div>
-)}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          {/* First row: Finish, Return, Continue */}
+          <div style={{ display: 'flex', gap: '4px' }}>
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                onFinish(job);
+              }}
+              className="btn btn-secondary btn-small"
+              style={{ 
+                background: '#d32f2f', 
+                color: 'white',
+                fontSize: '10px',
+                padding: '4px 8px'
+              }}
+            >
+              Finish
+            </button>
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                onReturn(job);
+              }}
+              className="btn btn-secondary btn-small"
+              style={{ 
+                background: '#ff9800', 
+                color: 'white',
+                fontSize: '10px',
+                padding: '4px 8px'
+              }}
+            >
+              Return
+            </button>
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                onContinue(job);
+              }}
+              className="btn btn-secondary btn-small"
+              style={{ 
+                background: '#4caf50', 
+                color: 'white',
+                fontSize: '10px',
+                padding: '4px 8px'
+              }}
+            >
+              Continue
+            </button>
+          </div>
+          
+          {/* Second row: Dispatch, Assign, Edit */}
+          <div style={{ display: 'flex', gap: '4px' }}>
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                onDispatch(job);
+              }}
+              className="btn btn-secondary btn-small"
+              style={{ fontSize: '10px', padding: '4px 8px' }}
+            >
+              Dispatch
+            </button>
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                onAssign(job);
+              }}
+              className="btn btn-secondary btn-small"
+              style={{ fontSize: '10px', padding: '4px 8px' }}
+            >
+              Assign
+            </button>
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                onEdit(job);
+              }}
+              className="btn btn-secondary btn-small"
+              style={{ fontSize: '10px', padding: '4px 8px' }}
+            >
+              Edit
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
