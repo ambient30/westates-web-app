@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, getDocs, query, where } from '../utils/firestoreTracker';
+import { collection, query, where, onSnapshot, getDoc, doc } from '../utils/firestoreTracker';
 import { db } from '../firebase';
 import { hasPermission } from '../utils/permissions';
 import EditJobModal from './EditJobModal';
@@ -13,7 +13,7 @@ import CreateJobModal from './CreateJobModal';
 
 function JobsList({ permissions }) {
   const [jobs, setJobs] = useState([]);
-  const [employees, setEmployees] = useState([]); // ← CACHE EMPLOYEES HERE
+  const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editingJob, setEditingJob] = useState(null);
   const [assigningJob, setAssigningJob] = useState(null);
@@ -23,47 +23,135 @@ function JobsList({ permissions }) {
   const [finishingJob, setFinishingJob] = useState(null);
   const [returningJob, setReturningJob] = useState(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  
+  // Track which equipment carriers we're listening to
+  const [activeCarriers, setActiveCarriers] = useState(new Set());
+  const [employeeUnsubscribers, setEmployeeUnsubscribers] = useState({});
 
   const canUpdate = hasPermission(permissions, 'jobs', 'update');
 
   useEffect(() => {
-    loadJobs();
+    console.log('🔴 Setting up REAL-TIME listener for jobs...');
+    
+    // REAL-TIME listener for jobs
+    const jobsQuery = query(
+      collection(db, 'jobs'),
+      where('hideFromSummary', '!=', true)
+    );
+    
+    const unsubscribe = onSnapshot(
+      jobsQuery,
+      (snapshot) => {
+        console.log(`🔄 Jobs updated! ${snapshot.docs.length} active jobs`);
+        
+        const jobsData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        
+        setJobs(jobsData);
+        
+        // Extract equipment carriers from updated jobs
+        const carriers = new Set();
+        jobsData.forEach(job => {
+          if (job.equipmentCarrier) {
+            const names = job.equipmentCarrier.split(',').map(n => n.trim());
+            names.forEach(name => carriers.add(name));
+          }
+        });
+        
+        // Update equipment carrier listeners
+        updateEmployeeListeners(carriers);
+        
+        setLoading(false);
+      },
+      (error) => {
+        console.error('❌ Error in jobs listener:', error);
+        setLoading(false);
+      }
+    );
+    
+    // Cleanup on unmount
+    return () => {
+      console.log('🔴 Cleaning up jobs listener');
+      unsubscribe();
+      // Clean up all employee listeners
+      Object.values(employeeUnsubscribers).forEach(unsub => unsub());
+    };
   }, []);
 
-  const loadJobs = async () => {
-    try {
-      setLoading(true);
+  // Manage real-time listeners for equipment carrier employees
+  const updateEmployeeListeners = (newCarriers) => {
+    // Find carriers to add
+    const toAdd = [...newCarriers].filter(name => !activeCarriers.has(name));
+    
+    // Find carriers to remove
+    const toRemove = [...activeCarriers].filter(name => !newCarriers.has(name));
+    
+    // Remove old listeners
+    toRemove.forEach(name => {
+      if (employeeUnsubscribers[name]) {
+        console.log(`🔴 Removing listener for employee: ${name}`);
+        employeeUnsubscribers[name]();
+        const newUnsubs = { ...employeeUnsubscribers };
+        delete newUnsubs[name];
+        setEmployeeUnsubscribers(newUnsubs);
+      }
+    });
+    
+    // Add new listeners
+    toAdd.forEach(name => {
+      console.log(`🟢 Adding REAL-TIME listener for employee: ${name}`);
       
-      // Load ONLY jobs that aren't hidden (active jobs only)
-      // This prevents loading 92 jobs when you only need 18!
-      const jobsQuery = query(
-        collection(db, 'jobs'),
-        where('hideFromSummary', '!=', true)
+      // Try direct doc access first
+      const employeeRef = doc(db, 'employees', name);
+      
+      const unsubscribe = onSnapshot(
+        employeeRef,
+        (docSnap) => {
+          if (docSnap.exists()) {
+            console.log(`🔄 Employee updated: ${name}`);
+            setEmployees(prev => {
+              const filtered = prev.filter(e => e.id !== name);
+              return [...filtered, { id: docSnap.id, ...docSnap.data() }];
+            });
+          } else {
+            // Try querying by fullName if direct access fails
+            const employeeQuery = query(
+              collection(db, 'employees'),
+              where('fullName', '==', name)
+            );
+            
+            onSnapshot(employeeQuery, (querySnap) => {
+              if (!querySnap.empty) {
+                const empData = { 
+                  id: querySnap.docs[0].id, 
+                  ...querySnap.docs[0].data() 
+                };
+                console.log(`🔄 Employee updated (via query): ${name}`);
+                setEmployees(prev => {
+                  const filtered = prev.filter(e => e.fullName !== name);
+                  return [...filtered, empData];
+                });
+              }
+            });
+          }
+        },
+        (error) => {
+          console.error(`❌ Error listening to employee ${name}:`, error);
+        }
       );
       
-      const querySnapshot = await getDocs(jobsQuery);
-      const jobsData = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
+      setEmployeeUnsubscribers(prev => ({
+        ...prev,
+        [name]: unsubscribe
       }));
-      
-      // Load employees ONCE - only active employees
-      const employeesQuery = query(
-        collection(db, 'employees'),
-        where('isActive', '==', true)
-      );
-      const employeesSnap = await getDocs(employeesQuery);
-      const employeesData = employeesSnap.docs.map(doc => ({ 
-        id: doc.id, 
-        ...doc.data() 
-      }));
-      
-      setJobs(jobsData);
-      setEmployees(employeesData); // ← CACHE FOR ALL JOB ROWS
-    } catch (err) {
-      console.error('Error loading jobs:', err);
-    } finally {
-      setLoading(false);
+    });
+    
+    setActiveCarriers(newCarriers);
+    
+    if (toAdd.length > 0 || toRemove.length > 0) {
+      console.log(`📦 Equipment carriers: ${newCarriers.size} active`);
     }
   };
 
@@ -84,10 +172,8 @@ const categorizeJobs = () => {
   const brokenJobs = [];
 
   jobs.forEach(job => {
-    // Skip jobs with hideFromSummary
     if (job.hideFromSummary === true) return;
 
-    // Potential Returns: Jobs without date or time
     if (!job.initialJobDate || !job.initialJobTime) {
       potentialReturns.push(job);
       return;
@@ -96,19 +182,16 @@ const categorizeJobs = () => {
     const jobDate = new Date(job.initialJobDate);
     jobDate.setHours(0, 0, 0, 0);
 
-    // Check if date is valid
     if (isNaN(jobDate.getTime())) {
       brokenJobs.push(job);
       return;
     }
 
-    // Broken Jobs: Past jobs that should have been removed
     if (jobDate < today) {
       brokenJobs.push(job);
       return;
     }
 
-    // Categorize future jobs
     if (jobDate >= today && jobDate <= thisWeekEnd) {
       thisWeek.push(job);
     } else if (jobDate > thisWeekEnd && jobDate <= nextWeekEnd) {
@@ -142,9 +225,9 @@ return (
             + New Job
           </button>
         )}
-        <button onClick={loadJobs} className="btn btn-secondary">
-          Refresh
-        </button>
+        <div style={{ fontSize: '12px', color: '#4caf50', marginLeft: '12px' }}>
+          🟢 Live sync active
+        </div>
       </div>
     </div>
 
@@ -236,7 +319,7 @@ return (
         onClose={() => setEditingJob(null)}
         onSave={() => {
           setEditingJob(null);
-          loadJobs();
+          // No manual reload needed - onSnapshot handles it!
         }}
       />
     )}
@@ -247,7 +330,7 @@ return (
         onClose={() => setAssigningJob(null)}
         onSave={() => {
           setAssigningJob(null);
-          loadJobs();
+          // No manual reload needed - onSnapshot handles it!
         }}
       />
     )}
@@ -259,7 +342,7 @@ return (
         onClose={() => setViewingJob(null)}
         onUpdate={() => {
           setViewingJob(null);
-          loadJobs();
+          // No manual reload needed - onSnapshot handles it!
         }}
       />
     )}
@@ -269,7 +352,7 @@ return (
     onClose={() => setShowCreateModal(false)}
     onSave={() => {
       setShowCreateModal(false);
-      loadJobs();
+      // No manual reload needed - onSnapshot handles it!
     }}
   />
 )}
@@ -280,7 +363,7 @@ return (
         onClose={() => setDispatchingJob(null)}
         onSave={() => {
           setDispatchingJob(null);
-          loadJobs();
+          // No manual reload needed - onSnapshot handles it!
         }}
       />
     )}
@@ -290,7 +373,7 @@ return (
     onClose={() => setContinuingJob(null)}
     onSave={() => {
       setContinuingJob(null);
-      loadJobs();
+      // No manual reload needed - onSnapshot handles it!
     }}
   />
 )}
@@ -300,7 +383,7 @@ return (
     onClose={() => setFinishingJob(null)}
     onSave={() => {
       setFinishingJob(null);
-      loadJobs();
+      // No manual reload needed - onSnapshot handles it!
     }}
   />
 )}
@@ -310,7 +393,7 @@ return (
     onClose={() => setReturningJob(null)}
     onSave={() => {
       setReturningJob(null);
-      loadJobs();
+      // No manual reload needed - onSnapshot handles it!
     }}
   />
 )}
@@ -421,7 +504,6 @@ function JobRow({ job, employees, canUpdate, onEdit, onAssign, onViewDetails, on
   
   useEffect(() => {
     if (job.equipmentCarrier && employees.length > 0) {
-      // USE CACHED EMPLOYEES - NO FIRESTORE CALL!
       const carriers = job.equipmentCarrier.split(',').map(name => name.trim());
       const carrierData = carriers.map(carrierName => {
         return employees.find(emp => emp.fullName === carrierName);
