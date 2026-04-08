@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, getDocs, doc, updateDoc, serverTimestamp } from '../utils/firestoreTracker';
+import { collection, query, where, onSnapshot, doc, updateDoc, serverTimestamp } from '../utils/firestoreTracker';
 import { db, auth } from '../firebase';
 import { hasPermission } from '../utils/permissions';
 
@@ -15,34 +15,45 @@ function TimeEntryView({ permissions }) {
   const canUpdate = hasPermission(permissions, 'jobs', 'update');
 
   useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = async () => {
-    try {
-      setLoading(true);
-      
-      // Load jobs
-      const jobsSnapshot = await getDocs(collection(db, 'jobs'));
-      const jobsData = jobsSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-      setJobs(jobsData);
-
-      // Load employees for dropdown
-      const employeesSnapshot = await getDocs(collection(db, 'employees'));
-      const employeesData = employeesSnapshot.docs.map(doc => ({
+    console.log('🔴 Setting up REAL-TIME listener for time entry jobs...');
+    
+    const jobsRef = collection(db, 'jobs');
+    
+    const unsubscribe = onSnapshot(
+      jobsRef,
+      (snapshot) => {
+        console.log(`🔄 Time entry jobs updated! ${snapshot.docs.length} total jobs`);
+        
+        const jobsData = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        
+        setJobs(jobsData);
+        setLoading(false);
+      },
+      (error) => {
+        console.error('❌ Error in time entry listener:', error);
+        setLoading(false);
+      }
+    );
+    
+    // Load employees
+    const employeesRef = collection(db, 'employees');
+    const empUnsubscribe = onSnapshot(employeesRef, (snapshot) => {
+      const employeesData = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
       setEmployees(employeesData);
-    } catch (err) {
-      console.error('Error loading data:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+    });
+    
+    return () => {
+      console.log('🔴 Cleaning up time entry listener');
+      unsubscribe();
+      empUnsubscribe();
+    };
+  }, []);
 
   const handleFilter = () => {
     if (!startDate || !endDate) {
@@ -98,28 +109,33 @@ function TimeEntryView({ permissions }) {
   }
 
   return (
-    <div>
-      <div className="jobs-header">
-        <h2>Time Entry - Payroll & Invoicing</h2>
-        <div className="jobs-actions">
-          <button onClick={loadData} className="btn btn-secondary">
-            Refresh
-          </button>
+    <div style={{ padding: '12px' }}>
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center',
+        marginBottom: '16px'
+      }}>
+        <h2 style={{ margin: 0, fontSize: '20px' }}>Job Data Entry</h2>
+        <div style={{ fontSize: '11px', color: '#4caf50' }}>
+          🟢 Live sync active
         </div>
       </div>
 
       {/* Date Range Filter */}
       <div style={{
         background: 'white',
-        padding: '24px',
-        borderRadius: '8px',
-        marginBottom: '24px',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+        padding: '16px',
+        borderRadius: '4px',
+        marginBottom: '16px',
+        border: '1px solid #e0e0e0'
       }}>
-        <h3 style={{ marginBottom: '16px', color: '#1a73e8' }}>Select Date Range</h3>
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-          <div style={{ flex: '1', minWidth: '200px' }}>
-            <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500' }}>
+        <h3 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: '600' }}>
+          Select Date Range
+        </h3>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          <div style={{ flex: '1', minWidth: '150px' }}>
+            <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px', fontWeight: '600', color: '#5f6368' }}>
               Start Date
             </label>
             <input
@@ -128,15 +144,15 @@ function TimeEntryView({ permissions }) {
               onChange={(e) => setStartDate(e.target.value)}
               style={{
                 width: '100%',
-                padding: '10px',
+                padding: '6px 8px',
                 border: '1px solid #dadce0',
                 borderRadius: '4px',
-                fontSize: '14px'
+                fontSize: '12px'
               }}
             />
           </div>
-          <div style={{ flex: '1', minWidth: '200px' }}>
-            <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500' }}>
+          <div style={{ flex: '1', minWidth: '150px' }}>
+            <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px', fontWeight: '600', color: '#5f6368' }}>
               End Date
             </label>
             <input
@@ -145,17 +161,17 @@ function TimeEntryView({ permissions }) {
               onChange={(e) => setEndDate(e.target.value)}
               style={{
                 width: '100%',
-                padding: '10px',
+                padding: '6px 8px',
                 border: '1px solid #dadce0',
                 borderRadius: '4px',
-                fontSize: '14px'
+                fontSize: '12px'
               }}
             />
           </div>
           <button 
             onClick={handleFilter}
             className="btn btn-primary"
-            style={{ padding: '10px 24px' }}
+            style={{ padding: '6px 16px', fontSize: '12px' }}
           >
             Load Jobs
           </button>
@@ -163,11 +179,11 @@ function TimeEntryView({ permissions }) {
 
         {filteredJobs.length > 0 && (
           <div style={{ 
-            marginTop: '16px', 
-            padding: '12px', 
+            marginTop: '12px', 
+            padding: '8px 12px', 
             background: '#e8f5e9', 
             borderRadius: '4px',
-            fontSize: '14px',
+            fontSize: '12px',
             color: '#2e7d32'
           }}>
             Found {filteredJobs.length} job{filteredJobs.length !== 1 ? 's' : ''} between {startDate} and {endDate}
@@ -179,73 +195,71 @@ function TimeEntryView({ permissions }) {
       {filteredJobs.length === 0 ? (
         <div style={{
           background: 'white',
-          padding: '60px 24px',
-          borderRadius: '8px',
+          padding: '40px 20px',
+          borderRadius: '4px',
           textAlign: 'center',
           color: '#5f6368',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+          border: '1px solid #e0e0e0'
         }}>
-          <h3 style={{ marginBottom: '8px', color: '#202124' }}>No Jobs Found</h3>
-          <p>
+          <h3 style={{ margin: '0 0 8px 0', fontSize: '16px', color: '#202124' }}>No Jobs Found</h3>
+          <p style={{ margin: 0, fontSize: '13px' }}>
             {!startDate || !endDate 
-              ? 'Select a date range and click "Load Jobs" to enter time' 
+              ? 'Select a date range and click "Load Jobs" to enter job data' 
               : 'No jobs with dispatched flaggers found in the selected date range'}
           </p>
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           {Object.entries(groupedJobs).map(([series, seriesJobs]) => {
             const isExpanded = expandedSeries[series];
 
             return (
               <div key={series} style={{
                 background: 'white',
-                borderRadius: '8px',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+                border: '1px solid #e0e0e0',
+                borderRadius: '4px',
                 overflow: 'hidden'
               }}>
                 {/* Series Header */}
                 <div
                   onClick={() => toggleSeries(series)}
                   style={{
-                    padding: '16px 20px',
-                    background: isExpanded ? '#e8f0fe' : 'white',
+                    padding: '12px 16px',
+                    background: isExpanded ? '#f8f9fa' : 'white',
                     cursor: 'pointer',
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center',
-                    borderBottom: isExpanded ? '2px solid #1a73e8' : 'none',
-                    transition: 'background 0.2s'
+                    borderBottom: isExpanded ? '1px solid #e0e0e0' : 'none'
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                    <span style={{ fontSize: '18px', color: '#5f6368' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '14px', color: '#5f6368' }}>
                       {isExpanded ? '▼' : '▶'}
                     </span>
                     <div>
-                      <span style={{ fontWeight: '600', fontSize: '16px', color: '#202124' }}>
+                      <span style={{ fontWeight: '600', fontSize: '14px', color: '#202124' }}>
                         {series}
                       </span>
-                      <span style={{ fontSize: '14px', color: '#5f6368', marginLeft: '12px' }}>
+                      <span style={{ fontSize: '12px', color: '#5f6368', marginLeft: '8px' }}>
                         ({seriesJobs.length} job{seriesJobs.length !== 1 ? 's' : ''})
                       </span>
                     </div>
                   </div>
-                  <div style={{ fontSize: '14px', color: '#5f6368' }}>
+                  <div style={{ fontSize: '12px', color: '#5f6368' }}>
                     {seriesJobs[0].caller} • {seriesJobs[0].location}
                   </div>
                 </div>
 
                 {/* Jobs in Series */}
                 {isExpanded && (
-                  <div style={{ padding: '20px' }}>
+                  <div style={{ padding: '12px' }}>
                     {seriesJobs.map((job, index) => (
-                      <JobTimeEntry
+                      <JobDataEntry
                         key={job.id}
                         job={job}
                         employees={employees}
                         canUpdate={canUpdate}
-                        onUpdate={loadData}
                         isLast={index === seriesJobs.length - 1}
                       />
                     ))}
@@ -260,15 +274,13 @@ function TimeEntryView({ permissions }) {
   );
 }
 
-function JobTimeEntry({ job, employees, canUpdate, onUpdate, isLast }) {
+function JobDataEntry({ job, employees, canUpdate, isLast }) {
   const [timeData, setTimeData] = useState(job.actualHours || {});
+  const [equipmentData, setEquipmentData] = useState(job.actualEquipment || {});
   const [saving, setSaving] = useState(false);
-useEffect(() => {
-    setTimeData(job.actualHours || {});
-  }, [job.actualHours]);
 
   // Parse dispatched flaggers into array
-    const flaggers = (job.dispatchedFlaggers || '').split(',').map(f => f.trim()).filter(Boolean);
+  const flaggers = (job.dispatchedFlaggers || '').split(',').map(f => f.trim()).filter(Boolean);
 
   const handleTimeChange = (flagger, field, value) => {
     setTimeData(prev => ({
@@ -280,20 +292,73 @@ useEffect(() => {
     }));
   };
 
+  const handleLunchChange = (flagger, isChecked) => {
+    if (isChecked) {
+      // Show popup
+      const applyToAll = window.confirm(
+        `Apply lunch break to all flaggers on this job?\n\n` +
+        `Click OK to apply to all flaggers.\n` +
+        `Click Cancel to apply only to ${flagger}.`
+      );
+
+      if (applyToAll) {
+        // Apply to all flaggers
+        const updated = { ...timeData };
+        flaggers.forEach(f => {
+          updated[f] = {
+            ...(updated[f] || {}),
+            hasLunch: true
+          };
+        });
+        setTimeData(updated);
+      } else {
+        // Apply only to this flagger
+        handleTimeChange(flagger, 'hasLunch', true);
+      }
+    } else {
+      // Uncheck
+      handleTimeChange(flagger, 'hasLunch', false);
+    }
+  };
+
+  const handleEquipmentChange = (field, value) => {
+    setEquipmentData(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
   const calculateHours = (flagger) => {
     const data = timeData[flagger] || {};
-    if (!data.startTime || !data.endTime) return 0;
+    if (!data.startTime || !data.endTime) return { total: 0, regular: 0, ot: 0 };
 
-    // Simple hour calculation (you can make this more sophisticated)
     const start = data.startTime.split(':');
     const end = data.endTime.split(':');
     
     let startMinutes = parseInt(start[0]) * 60 + parseInt(start[1] || 0);
     let endMinutes = parseInt(end[0]) * 60 + parseInt(end[1] || 0);
     
-    if (endMinutes < startMinutes) endMinutes += 24 * 60; // Next day
+    if (endMinutes < startMinutes) endMinutes += 24 * 60;
     
-    return ((endMinutes - startMinutes) / 60).toFixed(2);
+    let totalMinutes = endMinutes - startMinutes;
+
+    // Deduct lunch (30 minutes)
+    if (data.hasLunch) {
+      totalMinutes -= 30;
+    }
+
+    const totalHours = totalMinutes / 60;
+    
+    // Simple OT calculation (8 hours regular, rest is OT)
+    // This is simplified - actual OT logic is more complex with holidays, weekends, etc.
+    const regular = Math.min(totalHours, 8);
+    const ot = Math.max(0, totalHours - 8);
+
+    return {
+      total: totalHours.toFixed(2),
+      regular: regular.toFixed(2),
+      ot: ot.toFixed(2)
+    };
   };
 
   const handleSave = async () => {
@@ -305,18 +370,21 @@ useEffect(() => {
       const updatedTimeData = { ...timeData };
       flaggers.forEach(flagger => {
         if (updatedTimeData[flagger]?.startTime && updatedTimeData[flagger]?.endTime) {
-          updatedTimeData[flagger].hoursWorked = parseFloat(calculateHours(flagger));
+          const hours = calculateHours(flagger);
+          updatedTimeData[flagger].totalHours = parseFloat(hours.total);
+          updatedTimeData[flagger].regularHours = parseFloat(hours.regular);
+          updatedTimeData[flagger].otHours = parseFloat(hours.ot);
         }
       });
 
       await updateDoc(doc(db, 'jobs', job.id), {
         actualHours: updatedTimeData,
+        actualEquipment: equipmentData,
         updatedAt: serverTimestamp(),
         updatedBy: auth.currentUser?.email || 'unknown'
       });
 
-      alert('Time data saved successfully!');
-      onUpdate();
+      alert('Job data saved successfully!');
     } catch (err) {
       alert('Error saving: ' + err.message);
     } finally {
@@ -327,37 +395,193 @@ useEffect(() => {
   return (
     <div style={{
       borderBottom: isLast ? 'none' : '1px solid #e0e0e0',
-      paddingBottom: isLast ? 0 : '20px',
-      marginBottom: isLast ? 0 : '20px'
+      paddingBottom: isLast ? 0 : '12px',
+      marginBottom: isLast ? 0 : '12px'
     }}>
       {/* Job Header */}
       <div style={{
         background: '#f8f9fa',
-        padding: '12px 16px',
+        padding: '8px 12px',
         borderRadius: '4px',
-        marginBottom: '16px',
+        marginBottom: '12px',
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center'
       }}>
         <div>
-          <span style={{ fontWeight: '600', fontSize: '16px', color: '#202124' }}>
+          <span style={{ fontWeight: '600', fontSize: '13px', color: '#202124' }}>
             {job.jobID}
           </span>
-          <span style={{ fontSize: '14px', color: '#5f6368', marginLeft: '12px' }}>
+          <span style={{ fontSize: '11px', color: '#5f6368', marginLeft: '8px' }}>
             {job.initialJobDate} • {job.initialJobTime}
           </span>
         </div>
         <span style={{
-          padding: '4px 12px',
+          padding: '3px 8px',
           background: '#fff3e0',
-          borderRadius: '12px',
-          fontSize: '13px',
+          borderRadius: '10px',
+          fontSize: '11px',
           fontWeight: '500',
           color: '#e65100'
         }}>
           {job.rateName || 'No Rate'}
         </span>
+      </div>
+
+      {/* Equipment Section */}
+      <div style={{
+        background: '#f0f4ff',
+        border: '1px solid #d0d9ff',
+        borderRadius: '4px',
+        padding: '10px 12px',
+        marginBottom: '12px'
+      }}>
+        <h4 style={{ margin: '0 0 8px 0', fontSize: '12px', fontWeight: '600', color: '#1a73e8' }}>
+          Equipment Used This Day
+        </h4>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: '8px' }}>
+          <div>
+            <label style={{ display: 'block', fontSize: '10px', color: '#5f6368', marginBottom: '2px' }}>
+              Sign Sets
+            </label>
+            <input
+              type="number"
+              value={equipmentData.signSets || ''}
+              onChange={(e) => handleEquipmentChange('signSets', e.target.value)}
+              placeholder="0"
+              style={{
+                width: '100%',
+                padding: '4px 6px',
+                border: '1px solid #dadce0',
+                borderRadius: '4px',
+                fontSize: '11px'
+              }}
+            />
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '10px', color: '#5f6368', marginBottom: '2px' }}>
+              Indv Signs
+            </label>
+            <input
+              type="text"
+              value={equipmentData.indvSigns || ''}
+              onChange={(e) => handleEquipmentChange('indvSigns', e.target.value)}
+              style={{
+                width: '100%',
+                padding: '4px 6px',
+                border: '1px solid #dadce0',
+                borderRadius: '4px',
+                fontSize: '11px'
+              }}
+            />
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '10px', color: '#5f6368', marginBottom: '2px' }}>
+              Type 2
+            </label>
+            <input
+              type="text"
+              value={equipmentData.type2 || ''}
+              onChange={(e) => handleEquipmentChange('type2', e.target.value)}
+              style={{
+                width: '100%',
+                padding: '4px 6px',
+                border: '1px solid #dadce0',
+                borderRadius: '4px',
+                fontSize: '11px'
+              }}
+            />
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '10px', color: '#5f6368', marginBottom: '2px' }}>
+              Type 3
+            </label>
+            <input
+              type="text"
+              value={equipmentData.type3 || ''}
+              onChange={(e) => handleEquipmentChange('type3', e.target.value)}
+              style={{
+                width: '100%',
+                padding: '4px 6px',
+                border: '1px solid #dadce0',
+                borderRadius: '4px',
+                fontSize: '11px'
+              }}
+            />
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '10px', color: '#5f6368', marginBottom: '2px' }}>
+              Cones
+            </label>
+            <input
+              type="number"
+              value={equipmentData.cones || ''}
+              onChange={(e) => handleEquipmentChange('cones', e.target.value)}
+              placeholder="0"
+              style={{
+                width: '100%',
+                padding: '4px 6px',
+                border: '1px solid #dadce0',
+                borderRadius: '4px',
+                fontSize: '11px'
+              }}
+            />
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '10px', color: '#5f6368', marginBottom: '2px' }}>
+              Balloon Lights
+            </label>
+            <input
+              type="number"
+              value={equipmentData.balloonLights || ''}
+              onChange={(e) => handleEquipmentChange('balloonLights', e.target.value)}
+              placeholder="0"
+              style={{
+                width: '100%',
+                padding: '4px 6px',
+                border: '1px solid #dadce0',
+                borderRadius: '4px',
+                fontSize: '11px'
+              }}
+            />
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '10px', color: '#5f6368', marginBottom: '2px' }}>
+              Portable Lights
+            </label>
+            <input
+              type="number"
+              value={equipmentData.portableLights || ''}
+              onChange={(e) => handleEquipmentChange('portableLights', e.target.value)}
+              placeholder="0"
+              style={{
+                width: '100%',
+                padding: '4px 6px',
+                border: '1px solid #dadce0',
+                borderRadius: '4px',
+                fontSize: '11px'
+              }}
+            />
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '10px', color: '#5f6368', marginBottom: '2px' }}>
+              Trucks
+            </label>
+            <input
+              type="number"
+              value={equipmentData.truck || ''}
+              onChange={(e) => handleEquipmentChange('truck', e.target.value)}
+              placeholder="0"
+              style={{
+                width: '100%',
+                padding: '4px 6px',
+                border: '1px solid #dadce0',
+                borderRadius: '4px',
+                fontSize: '11px'
+              }}
+            />
+          </div>
+        </div>
       </div>
 
       {/* Flagger Time Entries */}
@@ -369,141 +593,150 @@ useEffect(() => {
           <div key={flagger} style={{
             background: 'white',
             border: '1px solid #e0e0e0',
-            borderRadius: '8px',
-            padding: '16px',
-            marginBottom: '12px'
+            borderRadius: '4px',
+            padding: '10px 12px',
+            marginBottom: '8px'
           }}>
-            <h4 style={{ marginTop: 0, marginBottom: '16px', color: '#1a73e8' }}>
+            <h4 style={{ marginTop: 0, marginBottom: '10px', fontSize: '13px', color: '#1a73e8', fontWeight: '600' }}>
               {flagger}
             </h4>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px' }}>
-  <div>
-    <label style={{ display: 'block', fontSize: '12px', color: '#5f6368', marginBottom: '4px' }}>
-      Start Time
-    </label>
-    <input
-      type="time"
-      value={data.startTime || ''}
-      onChange={(e) => handleTimeChange(flagger, 'startTime', e.target.value)}
-      style={{
-        width: '100%',
-        padding: '8px',
-        border: '1px solid #dadce0',
-        borderRadius: '4px',
-        fontSize: '14px'
-      }}
-    />
-  </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: '8px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '10px', color: '#5f6368', marginBottom: '2px' }}>
+                  Start Time
+                </label>
+                <input
+                  type="time"
+                  value={data.startTime || ''}
+                  onChange={(e) => handleTimeChange(flagger, 'startTime', e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '4px 6px',
+                    border: '1px solid #dadce0',
+                    borderRadius: '4px',
+                    fontSize: '11px'
+                  }}
+                />
+              </div>
 
-  <div>
-    <label style={{ display: 'block', fontSize: '12px', color: '#5f6368', marginBottom: '4px' }}>
-      End Time
-    </label>
-    <input
-      type="time"
-      value={data.endTime || ''}
-      onChange={(e) => handleTimeChange(flagger, 'endTime', e.target.value)}
-      style={{
-        width: '100%',
-        padding: '8px',
-        border: '1px solid #dadce0',
-        borderRadius: '4px',
-        fontSize: '14px'
-      }}
-    />
-  </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '10px', color: '#5f6368', marginBottom: '2px' }}>
+                  End Time
+                </label>
+                <input
+                  type="time"
+                  value={data.endTime || ''}
+                  onChange={(e) => handleTimeChange(flagger, 'endTime', e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '4px 6px',
+                    border: '1px solid #dadce0',
+                    borderRadius: '4px',
+                    fontSize: '11px'
+                  }}
+                />
+              </div>
 
-  <div>
-    <label style={{ display: 'block', fontSize: '12px', color: '#5f6368', marginBottom: '4px' }}>
-      Hours Worked
-    </label>
-    <input
-      type="text"
-      value={hours}
-      readOnly
-      style={{
-        width: '100%',
-        padding: '8px',
-        border: '1px solid #dadce0',
-        borderRadius: '4px',
-        fontSize: '14px',
-        background: '#f8f9fa'
-      }}
-    />
-  </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '10px', color: '#5f6368', marginBottom: '2px' }}>
+                  Lunch?
+                </label>
+                <div style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  height: '24px',
+                  paddingTop: '4px'
+                }}>
+                  <input
+                    type="checkbox"
+                    checked={data.hasLunch || false}
+                    onChange={(e) => handleLunchChange(flagger, e.target.checked)}
+                    style={{
+                      width: '16px',
+                      height: '16px',
+                      cursor: 'pointer'
+                    }}
+                  />
+                  <span style={{ fontSize: '10px', marginLeft: '4px', color: '#5f6368' }}>
+                    -30 min
+                  </span>
+                </div>
+              </div>
 
-  {/* ADD THESE NEW FIELDS */}
-  <div>
-    <label style={{ display: 'block', fontSize: '12px', color: '#5f6368', marginBottom: '4px' }}>
-      Roundtrip Time (min)
-    </label>
-    <input
-      type="number"
-      value={data.actualTravelTime || ''}
-      onChange={(e) => handleTimeChange(flagger, 'actualTravelTime', e.target.value)}
-      placeholder="0"
-      style={{
-        width: '100%',
-        padding: '8px',
-        border: '1px solid #dadce0',
-        borderRadius: '4px',
-        fontSize: '14px'
-      }}
-    />
-  </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '10px', color: '#5f6368', marginBottom: '2px' }}>
+                  Total Hours
+                </label>
+                <input
+                  type="text"
+                  value={hours.total}
+                  readOnly
+                  style={{
+                    width: '100%',
+                    padding: '4px 6px',
+                    border: '1px solid #dadce0',
+                    borderRadius: '4px',
+                    fontSize: '11px',
+                    background: '#f8f9fa',
+                    fontWeight: '600'
+                  }}
+                />
+              </div>
 
-  <div>
-    <label style={{ display: 'block', fontSize: '12px', color: '#5f6368', marginBottom: '4px' }}>
-      Roundtrip Miles
-    </label>
-    <input
-      type="number"
-      value={data.actualTravelMiles || ''}
-      onChange={(e) => handleTimeChange(flagger, 'actualTravelMiles', e.target.value)}
-      placeholder="0"
-      style={{
-        width: '100%',
-        padding: '8px',
-        border: '1px solid #dadce0',
-        borderRadius: '4px',
-        fontSize: '14px'
-      }}
-    />
-  </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '10px', color: '#5f6368', marginBottom: '2px' }}>
+                  Travel Hours
+                </label>
+                <input
+                  type="number"
+                  step="0.25"
+                  value={data.travelHours || ''}
+                  onChange={(e) => handleTimeChange(flagger, 'travelHours', e.target.value)}
+                  placeholder="0"
+                  style={{
+                    width: '100%',
+                    padding: '4px 6px',
+                    border: '1px solid #dadce0',
+                    borderRadius: '4px',
+                    fontSize: '11px'
+                  }}
+                />
+              </div>
 
-  <div>
-    <label style={{ display: 'block', fontSize: '12px', color: '#5f6368', marginBottom: '4px' }}>
-      Sign Stipends
-    </label>
-    <input
-      type="number"
-      value={data.signStipends || ''}
-      onChange={(e) => handleTimeChange(flagger, 'signStipends', e.target.value)}
-      placeholder="0"
-      style={{
-        width: '100%',
-        padding: '8px',
-        border: '1px solid #dadce0',
-        borderRadius: '4px',
-        fontSize: '14px'
-      }}
-    />
-  </div>
-</div>
+              <div>
+                <label style={{ display: 'block', fontSize: '10px', color: '#5f6368', marginBottom: '2px' }}>
+                  Sign Stipends
+                </label>
+                <input
+                  type="number"
+                  value={data.signStipends || ''}
+                  onChange={(e) => handleTimeChange(flagger, 'signStipends', e.target.value)}
+                  placeholder="0"
+                  style={{
+                    width: '100%',
+                    padding: '4px 6px',
+                    border: '1px solid #dadce0',
+                    borderRadius: '4px',
+                    fontSize: '11px'
+                  }}
+                />
+              </div>
+            </div>
           </div>
         );
       })}
 
       {/* Save Button */}
       {canUpdate && (
-        <div style={{ marginTop: '16px', textAlign: 'right' }}>
+        <div style={{ marginTop: '12px', textAlign: 'right' }}>
           <button
             onClick={handleSave}
             disabled={saving}
             className="btn btn-primary"
+            style={{ fontSize: '12px', padding: '6px 16px' }}
           >
-            {saving ? 'Saving...' : 'Save Time Data'}
+            {saving ? 'Saving...' : 'Save Job Data'}
           </button>
         </div>
       )}
