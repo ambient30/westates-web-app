@@ -376,18 +376,16 @@ function ContractorDetailsModal({ contractor, onClose, onEdit, canUpdate }) {
           </div>
 
           {/* Notes */}
-          {contractor.notes && (
-            <div style={{ 
-              background: '#f8f9fa', 
-              padding: '12px', 
-              borderRadius: '4px' 
-            }}>
-              <h3 style={{ margin: '0 0 8px 0', fontSize: '14px', color: '#5f6368' }}>
-                Notes
-              </h3>
-              <DetailRow label="Notes" value={contractor.notes} />
-            </div>
-          )}
+          <div style={{ 
+            background: '#f8f9fa', 
+            padding: '12px', 
+            borderRadius: '4px' 
+          }}>
+            <h3 style={{ margin: '0 0 8px 0', fontSize: '14px', color: '#5f6368' }}>
+              Notes
+            </h3>
+            <DetailRow label="Notes" value={contractor.notes || '-'} />
+          </div>
 
           {/* System Info */}
           <div style={{ 
@@ -434,8 +432,6 @@ function ContractorDetailsModal({ contractor, onClose, onEdit, canUpdate }) {
 }
 
 function DetailRow({ label, value }) {
-  if (!value) return null;
-  
   return (
     <div style={{ 
       display: 'flex', 
@@ -450,7 +446,7 @@ function DetailRow({ label, value }) {
         {label}:
       </span>
       <span style={{ color: '#5f6368' }}>
-        {value}
+        {value || '-'}
       </span>
     </div>
   );
