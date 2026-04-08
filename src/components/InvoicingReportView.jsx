@@ -194,39 +194,67 @@ function InvoicingReportView({ permissions }) {
         jobTotalBilling += flaggerBilling;
       });
 
-      // Travel billing
+      // Travel billing - PER FLAGGER
       let travelBilling = 0;
       let mileageBilling = 0;
 
-      let totalActualTravelMinutes = 0;
-      let totalActualTravelMiles = 0;
+      if (!isPrevailingWage) {
+        flaggers.forEach(flagger => {
+          const timeData = job.actualHours[flagger];
+          const flaggerTravelHours = parseFloat(timeData.travelHours || 0);
+          const flaggerTravelMiles = parseFloat(timeData.travelMiles || 0);
 
-      Object.values(job.actualHours || {}).forEach(flaggerData => {
-        totalActualTravelMinutes += parseFloat(flaggerData.actualTravelTime || 0);
-        totalActualTravelMiles += parseFloat(flaggerData.actualTravelMiles || 0);
-      });
-
-      if (isPrevailingWage) {
-        travelBilling = 0;
-        mileageBilling = 0;
-      } else if (isEPUD) {
-        const roundtripHours = totalActualTravelMinutes / 60;
-        travelBilling = roundtripHours * (parseFloat(jobRate.travelTime) || 0);
-        mileageBilling = totalActualTravelMiles * (parseFloat(jobRate.mileage) || 0);
-      } else {
-        const roundtripHours = totalActualTravelMinutes / 60;
-        const billableTravelHours = roundtripHours - 1;
-        
-        if (billableTravelHours >= 1) {
-          travelBilling = billableTravelHours * (parseFloat(jobRate.travelTime) || 0);
-        }
-        
-        if (totalActualTravelMiles >= 60) {
-          mileageBilling = totalActualTravelMiles * (parseFloat(jobRate.mileage) || 0);
-        }
+          if (isEPUD) {
+            // EPUD: Bill travel and mileage regardless of thresholds
+            travelBilling += flaggerTravelHours * (parseFloat(jobRate.travelTime) || 0);
+            mileageBilling += flaggerTravelMiles * (parseFloat(jobRate.mileage) || 0);
+          } else {
+            // Regular: Apply thresholds PER FLAGGER
+            // Travel: roundtrip - 1 hour, must be >= 1hr
+            const billableTravelHours = flaggerTravelHours - 1;
+            if (billableTravelHours >= 1) {
+              travelBilling += billableTravelHours * (parseFloat(jobRate.travelTime) || 0);
+            }
+            
+            // Mileage: must be >= 60 miles
+            if (flaggerTravelMiles >= 60) {
+              mileageBilling += flaggerTravelMiles * (parseFloat(jobRate.mileage) || 0);
+            }
+          }
+        });
       }
 
-      const totalJobAmount = jobTotalBilling + travelBilling + mileageBilling;
+      // Equipment billing
+      let equipmentBilling = 0;
+      const equipment = job.actualEquipment || {};
+      
+      if (equipment.signSets && parseInt(equipment.signSets) > 0) {
+        equipmentBilling += parseInt(equipment.signSets) * (parseFloat(jobRate.signSets) || 0);
+      }
+      if (equipment.indvSigns) {
+        // Individual signs might be a string like "RWA" - use rate if exists
+        equipmentBilling += parseFloat(jobRate.indvSigns) || 0;
+      }
+      if (equipment.type2) {
+        equipmentBilling += parseFloat(jobRate.type2) || 0;
+      }
+      if (equipment.type3) {
+        equipmentBilling += parseFloat(jobRate.type3) || 0;
+      }
+      if (equipment.cones && parseInt(equipment.cones) > 0) {
+        equipmentBilling += parseInt(equipment.cones) * (parseFloat(jobRate.cones) || 0);
+      }
+      if (equipment.balloonLights && parseInt(equipment.balloonLights) > 0) {
+        equipmentBilling += parseInt(equipment.balloonLights) * (parseFloat(jobRate.balloonLights) || 0);
+      }
+      if (equipment.portableLights && parseInt(equipment.portableLights) > 0) {
+        equipmentBilling += parseInt(equipment.portableLights) * (parseFloat(jobRate.portableLights) || 0);
+      }
+      if (equipment.truck && parseInt(equipment.truck) > 0) {
+        equipmentBilling += parseInt(equipment.truck) * (parseFloat(jobRate.truck) || 0);
+      }
+
+      const totalJobAmount = jobTotalBilling + travelBilling + mileageBilling + equipmentBilling;
 
       clientInvoices[client].jobSeries[series].jobs.push({
         jobID: job.jobID,
@@ -236,6 +264,7 @@ function InvoicingReportView({ permissions }) {
         laborBilling: jobTotalBilling,
         travelBilling,
         mileageBilling,
+        equipmentBilling,
         amount: totalJobAmount
       });
 
@@ -254,7 +283,7 @@ function InvoicingReportView({ permissions }) {
     if (!invoiceData) return;
 
     const rows = [];
-    rows.push(['Client', 'Job Series', 'Job ID', 'Date', 'Location', 'Flaggers', 'Labor', 'Travel', 'Mileage', 'Total']);
+    rows.push(['Client', 'Job Series', 'Job ID', 'Date', 'Location', 'Flaggers', 'Labor', 'Travel', 'Mileage', 'Equipment', 'Total']);
 
     invoiceData.forEach(client => {
       Object.values(client.jobSeries).forEach(series => {
@@ -269,6 +298,7 @@ function InvoicingReportView({ permissions }) {
             job.laborBilling.toFixed(2),
             job.travelBilling.toFixed(2),
             job.mileageBilling.toFixed(2),
+            job.equipmentBilling.toFixed(2),
             job.amount.toFixed(2)
           ]);
         });
@@ -466,6 +496,7 @@ function ClientInvoiceCard({ invoice }) {
 
 function JobSeriesBreakdown({ series }) {
   const [expanded, setExpanded] = useState(false);
+  const [selectedJobDetails, setSelectedJobDetails] = useState(null);
 
   return (
     <div style={{
@@ -515,12 +546,29 @@ function JobSeriesBreakdown({ series }) {
                 <th style={{ padding: '6px', textAlign: 'right' }}>Labor</th>
                 <th style={{ padding: '6px', textAlign: 'right' }}>Travel</th>
                 <th style={{ padding: '6px', textAlign: 'right' }}>Mileage</th>
+                <th style={{ padding: '6px', textAlign: 'right' }}>Equipment</th>
                 <th style={{ padding: '6px', textAlign: 'right' }}>Total</th>
               </tr>
             </thead>
             <tbody>
               {series.jobs.map((job, idx) => (
-                <tr key={idx} style={{ borderBottom: '1px solid #e0e0e0' }}>
+                <tr 
+                  key={idx} 
+                  style={{ 
+                    borderBottom: '1px solid #e0e0e0',
+                    cursor: 'pointer',
+                    background: selectedJobDetails?.jobID === job.jobID ? '#e8f0fe' : 'transparent'
+                  }}
+                  onClick={() => setSelectedJobDetails(
+                    selectedJobDetails?.jobID === job.jobID ? null : series.jobsData[idx]
+                  )}
+                  onMouseEnter={(e) => e.currentTarget.style.background = '#f8f9fa'}
+                  onMouseLeave={(e) => {
+                    if (selectedJobDetails?.jobID !== job.jobID) {
+                      e.currentTarget.style.background = 'transparent';
+                    }
+                  }}
+                >
                   <td style={{ padding: '6px' }}>{job.jobID}</td>
                   <td style={{ padding: '6px' }}>{job.date}</td>
                   <td style={{ padding: '6px' }}>{job.location}</td>
@@ -528,6 +576,7 @@ function JobSeriesBreakdown({ series }) {
                   <td style={{ padding: '6px', textAlign: 'right' }}>${job.laborBilling.toFixed(2)}</td>
                   <td style={{ padding: '6px', textAlign: 'right' }}>${job.travelBilling.toFixed(2)}</td>
                   <td style={{ padding: '6px', textAlign: 'right' }}>${job.mileageBilling.toFixed(2)}</td>
+                  <td style={{ padding: '6px', textAlign: 'right' }}>${job.equipmentBilling.toFixed(2)}</td>
                   <td style={{ padding: '6px', textAlign: 'right', fontWeight: '600' }}>
                     ${job.amount.toFixed(2)}
                   </td>
@@ -536,10 +585,306 @@ function JobSeriesBreakdown({ series }) {
             </tbody>
           </table>
 
+          {/* Detailed Job Breakdown */}
+          {selectedJobDetails && (
+            <JobDetailedBreakdown job={selectedJobDetails} />
+          )}
+
           {/* REMARKS SECTION */}
           <RemarksSection jobs={series.jobsData} />
         </div>
       )}
+    </div>
+  );
+}
+
+function JobDetailedBreakdown({ job }) {
+  const [rates, setRates] = useState([]);
+  
+  useEffect(() => {
+    // Load rates to get rate details
+    const ratesRef = collection(db, 'rates');
+    const unsubscribe = onSnapshot(ratesRef, (snapshot) => {
+      const ratesData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setRates(ratesData);
+    });
+    
+    return () => unsubscribe();
+  }, []);
+  
+  const jobRate = rates.find(r => r.id === job.rateId);
+  
+  if (!jobRate || !job.actualHours) {
+    return (
+      <div style={{
+        marginTop: '10px',
+        padding: '10px',
+        background: 'white',
+        border: '1px solid #e0e0e0',
+        borderRadius: '4px',
+        fontSize: '11px',
+        color: '#5f6368'
+      }}>
+        No detailed breakdown available
+      </div>
+    );
+  }
+  
+  const isPrevailingWage = jobRate.flaggerPay > 0;
+  const isHolidayJob = isHoliday(job.initialJobDate);
+  const isWeekendJob = isWeekend(job.initialJobDate, jobRate.weekendDuration);
+  const isNightJob = isNightTime(job.initialJobTime, jobRate.overtimeNights);
+  
+  const regularRate = parseFloat(jobRate.flaggerHours) || 0;
+  const otRate = parseFloat(jobRate.flaggerHoursOT) || 0;
+  const holidayRate = regularRate * (parseFloat(jobRate.holiday) || 2);
+  const travelRate = parseFloat(jobRate.travelTime) || 0;
+  const mileageRate = parseFloat(jobRate.mileage) || 0;
+  const otStart = parseInt(jobRate.otStarts) || 8;
+  const minimumHours = parseFloat(jobRate.hourMinimum) || 4;
+  
+  const flaggers = Object.keys(job.actualHours || {});
+  
+  return (
+    <div style={{
+      marginTop: '10px',
+      padding: '10px',
+      background: 'white',
+      border: '2px solid #1a73e8',
+      borderRadius: '4px'
+    }}>
+      <div style={{
+        fontSize: '12px',
+        fontWeight: '600',
+        color: '#1a73e8',
+        marginBottom: '10px',
+        paddingBottom: '6px',
+        borderBottom: '2px solid #e0e0e0'
+      }}>
+        Detailed Breakdown: {job.jobID}
+      </div>
+      
+      {/* Rate Card Info */}
+      <div style={{
+        background: '#f0f4ff',
+        padding: '8px',
+        borderRadius: '4px',
+        marginBottom: '10px',
+        fontSize: '10px'
+      }}>
+        <div style={{ fontWeight: '600', marginBottom: '4px', color: '#1a73e8' }}>
+          Rate Card: {job.rateName || jobRate.name || 'Unknown'}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: '4px', color: '#5f6368' }}>
+          <div>Regular: ${regularRate}/hr</div>
+          <div>OT: ${otRate}/hr</div>
+          {isHolidayJob && <div style={{ color: '#d32f2f', fontWeight: '600' }}>Holiday: ${holidayRate}/hr</div>}
+          <div>OT Starts: {otStart} hrs</div>
+          <div>Minimum: {minimumHours} hrs</div>
+          <div>Travel: ${travelRate}/hr</div>
+          <div>Mileage: ${mileageRate}/mi</div>
+        </div>
+        {isPrevailingWage && (
+          <div style={{ marginTop: '4px', color: '#d32f2f', fontWeight: '600' }}>
+            ⚠ Prevailing Wage - NO travel/mileage billed
+          </div>
+        )}
+      </div>
+      
+      {/* Per-Flagger Breakdown */}
+      {flaggers.map(flagger => {
+        const timeData = job.actualHours[flagger];
+        const hoursWorked = parseFloat(timeData.hoursWorked || 0);
+        const travelHours = parseFloat(timeData.travelHours || 0);
+        const travelMiles = parseFloat(timeData.travelMiles || 0);
+        
+        let regularHours = 0;
+        let otHours = 0;
+        let holidayHours = 0;
+        
+        if (isHolidayJob) {
+          holidayHours = hoursWorked;
+        } else if (isWeekendJob || isNightJob) {
+          otHours = hoursWorked;
+        } else {
+          regularHours = Math.min(hoursWorked, otStart);
+          otHours = Math.max(0, hoursWorked - otStart);
+        }
+        
+        const totalActualHours = regularHours + otHours + holidayHours;
+        let minimumApplied = false;
+        
+        if (totalActualHours < minimumHours) {
+          const shortfall = minimumHours - totalActualHours;
+          regularHours += shortfall;
+          minimumApplied = true;
+        }
+        
+        const regularPay = regularHours * regularRate;
+        const otPay = otHours * otRate;
+        const holidayPay = holidayHours * holidayRate;
+        
+        // Calculate travel/mileage per flagger
+        let flaggerTravelPay = 0;
+        let flaggerMileagePay = 0;
+        
+        if (!isPrevailingWage) {
+          const isEPUD = isEPUDJob(job);
+          
+          if (isEPUD) {
+            // EPUD: Bill all travel/mileage
+            flaggerTravelPay = travelHours * travelRate;
+            flaggerMileagePay = travelMiles * mileageRate;
+          } else {
+            // Regular: Apply thresholds
+            const billableTravelHours = travelHours - 1;
+            if (billableTravelHours >= 1) {
+              flaggerTravelPay = billableTravelHours * travelRate;
+            }
+            
+            if (travelMiles >= 60) {
+              flaggerMileagePay = travelMiles * mileageRate;
+            }
+          }
+        }
+        
+        const totalPay = regularPay + otPay + holidayPay + flaggerTravelPay + flaggerMileagePay;
+        
+        return (
+          <div key={flagger} style={{
+            background: '#fafafa',
+            padding: '8px',
+            borderRadius: '4px',
+            marginBottom: '6px',
+            border: '1px solid #e0e0e0'
+          }}>
+            <div style={{ fontWeight: '600', fontSize: '11px', color: '#202124', marginBottom: '6px' }}>
+              {flagger}
+              {timeData.hasLunch && <span style={{ color: '#e65100', marginLeft: '6px', fontSize: '10px' }}>(LUNCH)</span>}
+            </div>
+            
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px', fontSize: '10px' }}>
+              <div>
+                <span style={{ color: '#5f6368' }}>Hours Worked:</span>{' '}
+                <span style={{ fontWeight: '600' }}>{hoursWorked.toFixed(2)} hrs</span>
+              </div>
+              
+              {minimumApplied && (
+                <div style={{ color: '#ff9800', fontWeight: '600' }}>
+                  ⚠ Min {minimumHours} hrs applied
+                </div>
+              )}
+              
+              {regularHours > 0 && (
+                <div>
+                  <span style={{ color: '#5f6368' }}>Regular:</span>{' '}
+                  {regularHours.toFixed(2)} hrs × ${regularRate} = ${regularPay.toFixed(2)}
+                </div>
+              )}
+              
+              {otHours > 0 && (
+                <div>
+                  <span style={{ color: '#5f6368' }}>OT:</span>{' '}
+                  {otHours.toFixed(2)} hrs × ${otRate} = ${otPay.toFixed(2)}
+                </div>
+              )}
+              
+              {holidayHours > 0 && (
+                <div style={{ color: '#d32f2f', fontWeight: '600' }}>
+                  <span>Holiday:</span>{' '}
+                  {holidayHours.toFixed(2)} hrs × ${holidayRate} = ${holidayPay.toFixed(2)}
+                </div>
+              )}
+              
+              {flaggerTravelPay > 0 && (
+                <div>
+                  <span style={{ color: '#5f6368' }}>Travel:</span>{' '}
+                  {(travelHours - (isEPUDJob(job) ? 0 : 1)).toFixed(2)} hrs × ${travelRate} = ${flaggerTravelPay.toFixed(2)}
+                </div>
+              )}
+              
+              {flaggerMileagePay > 0 && (
+                <div>
+                  <span style={{ color: '#5f6368' }}>Mileage:</span>{' '}
+                  {travelMiles.toFixed(0)} mi × ${mileageRate} = ${flaggerMileagePay.toFixed(2)}
+                </div>
+              )}
+              
+              <div style={{ 
+                gridColumn: '1 / -1',
+                paddingTop: '4px',
+                borderTop: '1px solid #e0e0e0',
+                fontWeight: '600',
+                color: '#2e7d32'
+              }}>
+                Flagger Total: ${totalPay.toFixed(2)}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+      
+      {/* Equipment */}
+      {job.actualEquipment && Object.keys(job.actualEquipment).length > 0 && (
+        <div style={{
+          background: '#f0f4ff',
+          padding: '8px',
+          borderRadius: '4px',
+          marginTop: '6px',
+          border: '1px solid #d0d9ff'
+        }}>
+          <div style={{ fontWeight: '600', marginBottom: '4px', fontSize: '11px', color: '#1a73e8' }}>
+            Equipment
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '4px', fontSize: '10px' }}>
+            {job.actualEquipment.signSets && parseInt(job.actualEquipment.signSets) > 0 && (
+              <div>
+                Sign Sets: {job.actualEquipment.signSets} × ${jobRate.signSets || 0} = ${(parseInt(job.actualEquipment.signSets) * (parseFloat(jobRate.signSets) || 0)).toFixed(2)}
+              </div>
+            )}
+            {job.actualEquipment.indvSigns && (
+              <div>
+                Indv Signs: {job.actualEquipment.indvSigns} = ${(parseFloat(jobRate.indvSigns) || 0).toFixed(2)}
+              </div>
+            )}
+            {job.actualEquipment.type2 && (
+              <div>
+                Type 2: {job.actualEquipment.type2} = ${(parseFloat(jobRate.type2) || 0).toFixed(2)}
+              </div>
+            )}
+            {job.actualEquipment.type3 && (
+              <div>
+                Type 3: {job.actualEquipment.type3} = ${(parseFloat(jobRate.type3) || 0).toFixed(2)}
+              </div>
+            )}
+            {job.actualEquipment.cones && parseInt(job.actualEquipment.cones) > 0 && (
+              <div>
+                Cones: {job.actualEquipment.cones} × ${jobRate.cones || 0} = ${(parseInt(job.actualEquipment.cones) * (parseFloat(jobRate.cones) || 0)).toFixed(2)}
+              </div>
+            )}
+            {job.actualEquipment.balloonLights && parseInt(job.actualEquipment.balloonLights) > 0 && (
+              <div>
+                Balloon Lights: {job.actualEquipment.balloonLights} × ${jobRate.balloonLights || 0} = ${(parseInt(job.actualEquipment.balloonLights) * (parseFloat(jobRate.balloonLights) || 0)).toFixed(2)}
+              </div>
+            )}
+            {job.actualEquipment.portableLights && parseInt(job.actualEquipment.portableLights) > 0 && (
+              <div>
+                Portable Lights: {job.actualEquipment.portableLights} × ${jobRate.portableLights || 0} = ${(parseInt(job.actualEquipment.portableLights) * (parseFloat(jobRate.portableLights) || 0)).toFixed(2)}
+              </div>
+            )}
+            {job.actualEquipment.truck && parseInt(job.actualEquipment.truck) > 0 && (
+              <div>
+                Trucks: {job.actualEquipment.truck} × ${jobRate.truck || 0} = ${(parseInt(job.actualEquipment.truck) * (parseFloat(jobRate.truck) || 0)).toFixed(2)}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      
+      {/* Travel & Mileage removed - now shown per flagger above */}
     </div>
   );
 }
