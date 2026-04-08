@@ -159,7 +159,13 @@ function InvoicingReportView({ permissions }) {
 
       flaggers.forEach(flagger => {
         const timeData = job.actualHours[flagger];
-        const hoursWorked = parseFloat(timeData.hoursWorked || 0);
+        let totalHours = parseFloat(timeData.totalHours || timeData.hoursWorked || 0);
+        
+        // If lunch was taken, it should already be deducted in totalHours
+        // But if we only have hoursWorked, we need to deduct lunch
+        if (timeData.hasLunch && !timeData.totalHours) {
+          totalHours -= 0.5; // Deduct 30 minutes
+        }
 
         const regularRate = parseFloat(jobRate.flaggerHours) || 0;
         const otRate = parseFloat(jobRate.flaggerHoursOT) || 0;
@@ -170,13 +176,13 @@ function InvoicingReportView({ permissions }) {
         let holidayHours = 0;
 
         if (isHolidayJob) {
-          holidayHours = hoursWorked;
+          holidayHours = totalHours;
         } else if (isWeekendJob || isNightJob) {
-          otHours = hoursWorked;
+          otHours = totalHours;
         } else {
           const otStart = parseInt(jobRate.otStarts) || 8;
-          regularHours = Math.min(hoursWorked, otStart);
-          otHours = Math.max(0, hoursWorked - otStart);
+          regularHours = Math.min(totalHours, otStart);
+          otHours = Math.max(0, totalHours - otStart);
         }
 
         const minimumHours = parseFloat(jobRate.hourMinimum) || 4;
@@ -228,30 +234,54 @@ function InvoicingReportView({ permissions }) {
       let equipmentBilling = 0;
       const equipment = job.actualEquipment || {};
       
+      // Sign Sets: signSets × 6 × rate.signs
       if (equipment.signSets && parseInt(equipment.signSets) > 0) {
-        equipmentBilling += parseInt(equipment.signSets) * (parseFloat(jobRate.signSets) || 0);
+        equipmentBilling += parseInt(equipment.signSets) * 6 * (parseFloat(jobRate.signs) || 0);
       }
-      if (equipment.indvSigns) {
-        // Individual signs might be a string like "RWA" - use rate if exists
-        equipmentBilling += parseFloat(jobRate.indvSigns) || 0;
+      
+      // Indv Signs: indvSigns × rate.signs
+      if (equipment.indvSigns && parseInt(equipment.indvSigns) > 0) {
+        equipmentBilling += parseInt(equipment.indvSigns) * (parseFloat(jobRate.signs) || 0);
       }
-      if (equipment.type2) {
-        equipmentBilling += parseFloat(jobRate.type2) || 0;
+      
+      // Type 2: type2 × rate.type2
+      if (equipment.type2 && parseInt(equipment.type2) > 0) {
+        equipmentBilling += parseInt(equipment.type2) * (parseFloat(jobRate.type2) || 0);
       }
-      if (equipment.type3) {
-        equipmentBilling += parseFloat(jobRate.type3) || 0;
+      
+      // Type 3: type3 × rate.type3
+      if (equipment.type3 && parseInt(equipment.type3) > 0) {
+        equipmentBilling += parseInt(equipment.type3) * (parseFloat(jobRate.type3) || 0);
       }
+      
+      // Cones: cones × rate.cones
       if (equipment.cones && parseInt(equipment.cones) > 0) {
         equipmentBilling += parseInt(equipment.cones) * (parseFloat(jobRate.cones) || 0);
       }
+      
+      // Balloon Lights: balloonLights × rate.balloonLights
       if (equipment.balloonLights && parseInt(equipment.balloonLights) > 0) {
         equipmentBilling += parseInt(equipment.balloonLights) * (parseFloat(jobRate.balloonLights) || 0);
       }
+      
+      // Portable Lights: portableLights × rate.portableLights
       if (equipment.portableLights && parseInt(equipment.portableLights) > 0) {
         equipmentBilling += parseInt(equipment.portableLights) * (parseFloat(jobRate.portableLights) || 0);
       }
+      
+      // Trucks: truck × rate.truck
       if (equipment.truck && parseInt(equipment.truck) > 0) {
         equipmentBilling += parseInt(equipment.truck) * (parseFloat(jobRate.truck) || 0);
+      }
+      
+      // Truck Mileage: truckMileage × rate.truckMileage
+      if (equipment.truckMileage && parseInt(equipment.truckMileage) > 0) {
+        equipmentBilling += parseInt(equipment.truckMileage) * (parseFloat(jobRate.truckMileage) || 0);
+      }
+      
+      // TCP: tcp × rate.tcp
+      if (equipment.tcp && parseInt(equipment.tcp) > 0) {
+        equipmentBilling += parseInt(equipment.tcp) * (parseFloat(jobRate.tcp) || 0);
       }
 
       const totalJobAmount = jobTotalBilling + travelBilling + mileageBilling + equipmentBilling;
@@ -569,7 +599,14 @@ function JobSeriesBreakdown({ series }) {
                     }
                   }}
                 >
-                  <td style={{ padding: '6px' }}>{job.jobID}</td>
+                  <td style={{ padding: '6px' }}>
+                    {job.jobID}
+                    {job.poWoJobNum && (
+                      <span style={{ color: '#5f6368', marginLeft: '6px', fontSize: '10px' }}>
+                        PO: {job.poWoJobNum}
+                      </span>
+                    )}
+                  </td>
                   <td style={{ padding: '6px' }}>{job.date}</td>
                   <td style={{ padding: '6px' }}>{job.location}</td>
                   <td style={{ padding: '6px', textAlign: 'right' }}>{job.flaggers}</td>
@@ -665,7 +702,56 @@ function JobDetailedBreakdown({ job }) {
         borderBottom: '2px solid #e0e0e0'
       }}>
         Detailed Breakdown: {job.jobID}
+        {job.poWoJobNum && (
+          <span style={{ color: '#5f6368', marginLeft: '8px', fontSize: '11px', fontWeight: '500' }}>
+            PO: {job.poWoJobNum}
+          </span>
+        )}
       </div>
+      
+      {/* Job Info Section */}
+      <div style={{
+        background: '#fff9e6',
+        padding: '8px',
+        borderRadius: '4px',
+        marginBottom: '10px',
+        fontSize: '10px',
+        border: '1px solid #ffd966'
+      }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 8px' }}>
+          {job.billing && (
+            <>
+              <span style={{ fontWeight: '600', color: '#7f6000' }}>Billing:</span>
+              <span>{job.billing}</span>
+            </>
+          )}
+          {job.caller && (
+            <>
+              <span style={{ fontWeight: '600', color: '#7f6000' }}>Caller:</span>
+              <span>{job.caller}</span>
+            </>
+          )}
+        </div>
+      </div>
+      
+      {/* Other Notes */}
+      {job.otherNotes && (
+        <div style={{
+          background: '#fff3e0',
+          padding: '8px',
+          borderRadius: '4px',
+          marginBottom: '10px',
+          fontSize: '10px',
+          border: '1px solid #ffb74d'
+        }}>
+          <div style={{ fontWeight: '600', marginBottom: '4px', color: '#e65100' }}>
+            Other Notes:
+          </div>
+          <div style={{ whiteSpace: 'pre-wrap' }}>
+            {job.otherNotes}
+          </div>
+        </div>
+      )}
       
       {/* Rate Card Info */}
       <div style={{
@@ -697,7 +783,13 @@ function JobDetailedBreakdown({ job }) {
       {/* Per-Flagger Breakdown */}
       {flaggers.map(flagger => {
         const timeData = job.actualHours[flagger];
-        const hoursWorked = parseFloat(timeData.hoursWorked || 0);
+        let totalHours = parseFloat(timeData.totalHours || timeData.hoursWorked || 0);
+        
+        // If lunch was taken and only hoursWorked exists, deduct lunch
+        if (timeData.hasLunch && !timeData.totalHours) {
+          totalHours -= 0.5;
+        }
+        
         const travelHours = parseFloat(timeData.travelHours || 0);
         const travelMiles = parseFloat(timeData.travelMiles || 0);
         
@@ -706,12 +798,12 @@ function JobDetailedBreakdown({ job }) {
         let holidayHours = 0;
         
         if (isHolidayJob) {
-          holidayHours = hoursWorked;
+          holidayHours = totalHours;
         } else if (isWeekendJob || isNightJob) {
-          otHours = hoursWorked;
+          otHours = totalHours;
         } else {
-          regularHours = Math.min(hoursWorked, otStart);
-          otHours = Math.max(0, hoursWorked - otStart);
+          regularHours = Math.min(totalHours, otStart);
+          otHours = Math.max(0, totalHours - otStart);
         }
         
         const totalActualHours = regularHours + otHours + holidayHours;
@@ -769,7 +861,7 @@ function JobDetailedBreakdown({ job }) {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px', fontSize: '10px' }}>
               <div>
                 <span style={{ color: '#5f6368' }}>Hours Worked:</span>{' '}
-                <span style={{ fontWeight: '600' }}>{hoursWorked.toFixed(2)} hrs</span>
+                <span style={{ fontWeight: '600' }}>{totalHours.toFixed(2)} hrs</span>
               </div>
               
               {minimumApplied && (
@@ -839,25 +931,25 @@ function JobDetailedBreakdown({ job }) {
           <div style={{ fontWeight: '600', marginBottom: '4px', fontSize: '11px', color: '#1a73e8' }}>
             Equipment
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '4px', fontSize: '10px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '4px', fontSize: '10px' }}>
             {job.actualEquipment.signSets && parseInt(job.actualEquipment.signSets) > 0 && (
               <div>
-                Sign Sets: {job.actualEquipment.signSets} × ${jobRate.signSets || 0} = ${(parseInt(job.actualEquipment.signSets) * (parseFloat(jobRate.signSets) || 0)).toFixed(2)}
+                Sign Sets: {job.actualEquipment.signSets} × 6 × ${jobRate.signs || 0} = ${(parseInt(job.actualEquipment.signSets) * 6 * (parseFloat(jobRate.signs) || 0)).toFixed(2)}
               </div>
             )}
-            {job.actualEquipment.indvSigns && (
+            {job.actualEquipment.indvSigns && parseInt(job.actualEquipment.indvSigns) > 0 && (
               <div>
-                Indv Signs: {job.actualEquipment.indvSigns} = ${(parseFloat(jobRate.indvSigns) || 0).toFixed(2)}
+                Indv Signs: {job.actualEquipment.indvSigns} × ${jobRate.signs || 0} = ${(parseInt(job.actualEquipment.indvSigns) * (parseFloat(jobRate.signs) || 0)).toFixed(2)}
               </div>
             )}
-            {job.actualEquipment.type2 && (
+            {job.actualEquipment.type2 && parseInt(job.actualEquipment.type2) > 0 && (
               <div>
-                Type 2: {job.actualEquipment.type2} = ${(parseFloat(jobRate.type2) || 0).toFixed(2)}
+                Type 2: {job.actualEquipment.type2} × ${jobRate.type2 || 0} = ${(parseInt(job.actualEquipment.type2) * (parseFloat(jobRate.type2) || 0)).toFixed(2)}
               </div>
             )}
-            {job.actualEquipment.type3 && (
+            {job.actualEquipment.type3 && parseInt(job.actualEquipment.type3) > 0 && (
               <div>
-                Type 3: {job.actualEquipment.type3} = ${(parseFloat(jobRate.type3) || 0).toFixed(2)}
+                Type 3: {job.actualEquipment.type3} × ${jobRate.type3 || 0} = ${(parseInt(job.actualEquipment.type3) * (parseFloat(jobRate.type3) || 0)).toFixed(2)}
               </div>
             )}
             {job.actualEquipment.cones && parseInt(job.actualEquipment.cones) > 0 && (
@@ -878,6 +970,16 @@ function JobDetailedBreakdown({ job }) {
             {job.actualEquipment.truck && parseInt(job.actualEquipment.truck) > 0 && (
               <div>
                 Trucks: {job.actualEquipment.truck} × ${jobRate.truck || 0} = ${(parseInt(job.actualEquipment.truck) * (parseFloat(jobRate.truck) || 0)).toFixed(2)}
+              </div>
+            )}
+            {job.actualEquipment.truckMileage && parseInt(job.actualEquipment.truckMileage) > 0 && (
+              <div>
+                Truck Mileage: {job.actualEquipment.truckMileage} × ${jobRate.truckMileage || 0} = ${(parseInt(job.actualEquipment.truckMileage) * (parseFloat(jobRate.truckMileage) || 0)).toFixed(2)}
+              </div>
+            )}
+            {job.actualEquipment.tcp && parseInt(job.actualEquipment.tcp) > 0 && (
+              <div>
+                TCP: {job.actualEquipment.tcp} × ${jobRate.tcp || 0} = ${(parseInt(job.actualEquipment.tcp) * (parseFloat(jobRate.tcp) || 0)).toFixed(2)}
               </div>
             )}
           </div>
