@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, getDocs } from '../utils/firestoreTracker';
+import { collection, onSnapshot } from '../utils/firestoreTracker';
 import { db } from '../firebase';
 
 // ============================================
@@ -56,31 +56,9 @@ function isWeekend(dateString, weekendDuration) {
   return weekendDuration.toLowerCase().includes(dayName.toLowerCase());
 }
 
-function calculateBillableTravel(travelTimeMinutes) {
-  if (!travelTimeMinutes) return 0;
-  
-  const roundtripHours = (travelTimeMinutes * 2) / 60;
-  const billableTravel = roundtripHours - 1;
-  
-  return billableTravel >= 1 ? billableTravel : 0;
+function isEPUDJob(job) {
+  return job.billing?.toUpperCase().includes('EPUD');
 }
-
-function calculateBillableMileage(travelMiles) {
-  const miles = parseFloat(travelMiles) || 0;
-  
-  if (miles < 30) return 0;
-  
-  return miles * 2;
-}
-
-function isEPUDJob(job, jobRate) {
-  if (!jobRate) return false;
-  return jobRate.name?.toUpperCase().includes('EPUD') || jobRate.id?.toUpperCase().includes('EPUD');
-}
-
-// ============================================
-// MAIN COMPONENT
-// ============================================
 
 function InvoicingReportView({ permissions }) {
   const [jobs, setJobs] = useState([]);
@@ -91,33 +69,34 @@ function InvoicingReportView({ permissions }) {
   const [invoiceData, setInvoiceData] = useState(null);
 
   useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = async () => {
-    try {
-      setLoading(true);
-
-      const jobsSnapshot = await getDocs(collection(db, 'jobs'));
-      const jobsData = jobsSnapshot.docs.map(doc => ({
+    console.log('🔴 Setting up REAL-TIME listener for invoicing...');
+    
+    const jobsRef = collection(db, 'jobs');
+    const ratesRef = collection(db, 'rates');
+    
+    const jobsUnsubscribe = onSnapshot(jobsRef, (snapshot) => {
+      const jobsData = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
-
-      const ratesSnapshot = await getDocs(collection(db, 'rates'));
-      const ratesData = ratesSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-
       setJobs(jobsData);
+    });
+    
+    const ratesUnsubscribe = onSnapshot(ratesRef, (snapshot) => {
+      const ratesData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
       setRates(ratesData);
-    } catch (err) {
-      console.error('Error loading data:', err);
-    } finally {
       setLoading(false);
-    }
-  };
+    });
+    
+    return () => {
+      console.log('🔴 Cleaning up invoicing listeners');
+      jobsUnsubscribe();
+      ratesUnsubscribe();
+    };
+  }, []);
 
   const generateInvoices = () => {
     if (!startDate || !endDate) {
@@ -152,7 +131,7 @@ function InvoicingReportView({ permissions }) {
       const isHolidayJob = isHoliday(job.initialJobDate);
       const isWeekendJob = isWeekend(job.initialJobDate, jobRate.weekendDuration);
       const isNightJob = isNightTime(job.initialJobTime, jobRate.overtimeNights);
-      const isEPUD = isEPUDJob(job, jobRate);
+      const isEPUD = isEPUDJob(job);
 
       if (!clientInvoices[client]) {
         clientInvoices[client] = {
@@ -168,6 +147,7 @@ function InvoicingReportView({ permissions }) {
         clientInvoices[client].jobSeries[series] = {
           series,
           jobs: [],
+          jobsData: [], // Store full job data for remarks
           totalAmount: 0
         };
       }
@@ -214,40 +194,36 @@ function InvoicingReportView({ permissions }) {
         jobTotalBilling += flaggerBilling;
       });
 
-      // Add travel billing - calculate PER FLAGGER, not summed
+      // Travel billing
       let travelBilling = 0;
       let mileageBilling = 0;
 
+      let totalActualTravelMinutes = 0;
+      let totalActualTravelMiles = 0;
+
+      Object.values(job.actualHours || {}).forEach(flaggerData => {
+        totalActualTravelMinutes += parseFloat(flaggerData.actualTravelTime || 0);
+        totalActualTravelMiles += parseFloat(flaggerData.actualTravelMiles || 0);
+      });
+
       if (isPrevailingWage) {
-        // Prevailing wage: NO travel time or mileage billed
         travelBilling = 0;
         mileageBilling = 0;
+      } else if (isEPUD) {
+        const roundtripHours = totalActualTravelMinutes / 60;
+        travelBilling = roundtripHours * (parseFloat(jobRate.travelTime) || 0);
+        mileageBilling = totalActualTravelMiles * (parseFloat(jobRate.mileage) || 0);
       } else {
-        // Calculate travel and mileage for EACH flagger separately
-        Object.values(job.actualHours || {}).forEach(flaggerData => {
-          const flaggerTravelMinutes = parseFloat(flaggerData.actualTravelTime || 0);
-          const flaggerTravelMiles = parseFloat(flaggerData.actualTravelMiles || 0);
-
-          if (isEPUD) {
-            // EPUD: Bill travel and mileage REGARDLESS of thresholds
-            const roundtripHours = flaggerTravelMinutes / 60;
-            
-            travelBilling += roundtripHours * (parseFloat(jobRate.travelTime) || 0);
-            mileageBilling += flaggerTravelMiles * (parseFloat(jobRate.mileage) || 0);
-          } else {
-            // Regular job: Apply thresholds PER FLAGGER
-            const roundtripHours = flaggerTravelMinutes / 60;
-            const billableTravelHours = roundtripHours - 1;
-            
-            if (billableTravelHours >= 1) {
-              travelBilling += billableTravelHours * (parseFloat(jobRate.travelTime) || 0);
-            }
-            
-            if (flaggerTravelMiles >= 60) {
-              mileageBilling += flaggerTravelMiles * (parseFloat(jobRate.mileage) || 0);
-            }
-          }
-        });
+        const roundtripHours = totalActualTravelMinutes / 60;
+        const billableTravelHours = roundtripHours - 1;
+        
+        if (billableTravelHours >= 1) {
+          travelBilling = billableTravelHours * (parseFloat(jobRate.travelTime) || 0);
+        }
+        
+        if (totalActualTravelMiles >= 60) {
+          mileageBilling = totalActualTravelMiles * (parseFloat(jobRate.mileage) || 0);
+        }
       }
 
       const totalJobAmount = jobTotalBilling + travelBilling + mileageBilling;
@@ -262,6 +238,9 @@ function InvoicingReportView({ permissions }) {
         mileageBilling,
         amount: totalJobAmount
       });
+
+      // Store full job data for remarks
+      clientInvoices[client].jobSeries[series].jobsData.push(job);
 
       clientInvoices[client].jobSeries[series].totalAmount += totalJobAmount;
       clientInvoices[client].totalAmount += totalJobAmount;
@@ -316,27 +295,32 @@ function InvoicingReportView({ permissions }) {
   }
 
   return (
-    <div>
-      <div className="jobs-header">
-        <h2>Invoicing Report</h2>
-        <div className="jobs-actions">
-          <button onClick={loadData} className="btn btn-secondary">
-            Refresh
-          </button>
+    <div style={{ padding: '12px' }}>
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center',
+        marginBottom: '16px'
+      }}>
+        <h2 style={{ margin: 0, fontSize: '20px' }}>Invoicing Report</h2>
+        <div style={{ fontSize: '11px', color: '#4caf50' }}>
+          🟢 Live sync active
         </div>
       </div>
 
       <div style={{
         background: 'white',
-        padding: '24px',
-        borderRadius: '8px',
-        marginBottom: '24px',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+        padding: '16px',
+        borderRadius: '4px',
+        marginBottom: '16px',
+        border: '1px solid #e0e0e0'
       }}>
-        <h3 style={{ marginBottom: '16px', color: '#1a73e8' }}>Select Billing Period</h3>
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-          <div style={{ flex: '1', minWidth: '200px' }}>
-            <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500' }}>
+        <h3 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: '600' }}>
+          Select Billing Period
+        </h3>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          <div style={{ flex: '1', minWidth: '150px' }}>
+            <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px', fontWeight: '600', color: '#5f6368' }}>
               Start Date
             </label>
             <input
@@ -345,15 +329,15 @@ function InvoicingReportView({ permissions }) {
               onChange={(e) => setStartDate(e.target.value)}
               style={{
                 width: '100%',
-                padding: '10px',
+                padding: '6px 8px',
                 border: '1px solid #dadce0',
                 borderRadius: '4px',
-                fontSize: '14px'
+                fontSize: '12px'
               }}
             />
           </div>
-          <div style={{ flex: '1', minWidth: '200px' }}>
-            <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500' }}>
+          <div style={{ flex: '1', minWidth: '150px' }}>
+            <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px', fontWeight: '600', color: '#5f6368' }}>
               End Date
             </label>
             <input
@@ -362,17 +346,17 @@ function InvoicingReportView({ permissions }) {
               onChange={(e) => setEndDate(e.target.value)}
               style={{
                 width: '100%',
-                padding: '10px',
+                padding: '6px 8px',
                 border: '1px solid #dadce0',
                 borderRadius: '4px',
-                fontSize: '14px'
+                fontSize: '12px'
               }}
             />
           </div>
           <button 
             onClick={generateInvoices}
             className="btn btn-primary"
-            style={{ padding: '10px 24px' }}
+            style={{ padding: '6px 16px', fontSize: '12px' }}
           >
             Generate Invoices
           </button>
@@ -380,7 +364,7 @@ function InvoicingReportView({ permissions }) {
             <button 
               onClick={exportToCSV}
               className="btn btn-secondary"
-              style={{ padding: '10px 24px' }}
+              style={{ padding: '6px 16px', fontSize: '12px' }}
             >
               Export CSV
             </button>
@@ -392,16 +376,16 @@ function InvoicingReportView({ permissions }) {
         <div>
           <div style={{
             background: 'white',
-            padding: '20px',
-            borderRadius: '8px',
-            marginBottom: '16px',
-            boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+            padding: '16px',
+            borderRadius: '4px',
+            marginBottom: '12px',
+            border: '1px solid #e0e0e0',
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center'
           }}>
-            <h3 style={{ margin: 0, color: '#1a73e8' }}>Total Invoices</h3>
-            <div style={{ fontSize: '32px', fontWeight: '600', color: '#2e7d32' }}>
+            <h3 style={{ margin: 0, fontSize: '16px', color: '#1a73e8' }}>Total Invoices</h3>
+            <div style={{ fontSize: '24px', fontWeight: '600', color: '#2e7d32' }}>
               ${invoiceData.reduce((sum, client) => sum + client.totalAmount, 0).toFixed(2)}
             </div>
           </div>
@@ -415,14 +399,14 @@ function InvoicingReportView({ permissions }) {
       {!invoiceData && !loading && (
         <div style={{
           background: 'white',
-          padding: '60px 24px',
-          borderRadius: '8px',
+          padding: '40px 20px',
+          borderRadius: '4px',
           textAlign: 'center',
           color: '#5f6368',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+          border: '1px solid #e0e0e0'
         }}>
-          <h3 style={{ marginBottom: '8px', color: '#202124' }}>No Invoices Generated</h3>
-          <p>Select a date range and click "Generate Invoices" to view client billing</p>
+          <h3 style={{ margin: '0 0 8px 0', fontSize: '16px', color: '#202124' }}>No Invoices Generated</h3>
+          <p style={{ margin: 0, fontSize: '13px' }}>Select a date range and click "Generate Invoices" to view client billing</p>
         </div>
       )}
     </div>
@@ -435,42 +419,42 @@ function ClientInvoiceCard({ invoice }) {
   return (
     <div style={{
       background: 'white',
-      borderRadius: '8px',
-      boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-      marginBottom: '16px',
+      border: '1px solid #e0e0e0',
+      borderRadius: '4px',
+      marginBottom: '12px',
       overflow: 'hidden'
     }}>
       <div
         onClick={() => setExpanded(!expanded)}
         style={{
-          padding: '20px',
+          padding: '12px 16px',
           cursor: 'pointer',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          background: expanded ? '#e8f0fe' : 'white'
+          background: expanded ? '#f8f9fa' : 'white'
         }}
       >
         <div>
-          <div style={{ fontWeight: '600', fontSize: '18px', color: '#202124', marginBottom: '4px' }}>
+          <div style={{ fontWeight: '600', fontSize: '15px', color: '#202124', marginBottom: '2px' }}>
             {invoice.client}
           </div>
-          <div style={{ fontSize: '14px', color: '#5f6368' }}>
+          <div style={{ fontSize: '12px', color: '#5f6368' }}>
             {Object.keys(invoice.jobSeries).length} job series
           </div>
         </div>
         <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: '24px', fontWeight: '600', color: '#2e7d32' }}>
+          <div style={{ fontSize: '18px', fontWeight: '600', color: '#2e7d32' }}>
             ${invoice.totalAmount.toFixed(2)}
           </div>
-          <div style={{ fontSize: '12px', color: '#5f6368' }}>
+          <div style={{ fontSize: '10px', color: '#5f6368' }}>
             {expanded ? '▲' : '▼'}
           </div>
         </div>
       </div>
 
       {expanded && (
-        <div style={{ padding: '20px', background: '#fafafa', borderTop: '2px solid #1a73e8' }}>
+        <div style={{ padding: '12px', background: '#fafafa', borderTop: '1px solid #e0e0e0' }}>
           {Object.values(invoice.jobSeries).map(series => (
             <JobSeriesBreakdown key={series.series} series={series} />
           ))}
@@ -486,14 +470,14 @@ function JobSeriesBreakdown({ series }) {
   return (
     <div style={{
       border: '1px solid #e0e0e0',
-      borderRadius: '8px',
-      marginBottom: '12px',
+      borderRadius: '4px',
+      marginBottom: '8px',
       overflow: 'hidden'
     }}>
       <div
         onClick={() => setExpanded(!expanded)}
         style={{
-          padding: '12px 16px',
+          padding: '10px 12px',
           cursor: 'pointer',
           display: 'flex',
           justifyContent: 'space-between',
@@ -502,57 +486,149 @@ function JobSeriesBreakdown({ series }) {
         }}
       >
         <div>
-          <div style={{ fontWeight: '600', fontSize: '15px', color: '#202124' }}>
+          <div style={{ fontWeight: '600', fontSize: '13px', color: '#202124' }}>
             {series.series}
           </div>
-          <div style={{ fontSize: '13px', color: '#5f6368' }}>
+          <div style={{ fontSize: '11px', color: '#5f6368' }}>
             {series.jobs.length} job{series.jobs.length !== 1 ? 's' : ''}
           </div>
         </div>
         <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: '18px', fontWeight: '600', color: '#2e7d32' }}>
+          <div style={{ fontSize: '16px', fontWeight: '600', color: '#2e7d32' }}>
             ${series.totalAmount.toFixed(2)}
           </div>
-          <div style={{ fontSize: '11px', color: '#5f6368' }}>
+          <div style={{ fontSize: '10px', color: '#5f6368' }}>
             {expanded ? '▲' : '▼'}
           </div>
         </div>
       </div>
 
       {expanded && (
-        <div style={{ padding: '12px', background: '#f8f9fa', borderTop: '1px solid #e0e0e0' }}>
-          <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
+        <div style={{ padding: '10px', background: '#f8f9fa', borderTop: '1px solid #e0e0e0' }}>
+          <table style={{ width: '100%', fontSize: '11px', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ borderBottom: '2px solid #e0e0e0' }}>
-                <th style={{ padding: '8px', textAlign: 'left' }}>Job ID</th>
-                <th style={{ padding: '8px', textAlign: 'left' }}>Date</th>
-                <th style={{ padding: '8px', textAlign: 'left' }}>Location</th>
-                <th style={{ padding: '8px', textAlign: 'right' }}>Flaggers</th>
-                <th style={{ padding: '8px', textAlign: 'right' }}>Labor</th>
-                <th style={{ padding: '8px', textAlign: 'right' }}>Travel</th>
-                <th style={{ padding: '8px', textAlign: 'right' }}>Mileage</th>
-                <th style={{ padding: '8px', textAlign: 'right' }}>Total</th>
+                <th style={{ padding: '6px', textAlign: 'left' }}>Job ID</th>
+                <th style={{ padding: '6px', textAlign: 'left' }}>Date</th>
+                <th style={{ padding: '6px', textAlign: 'left' }}>Location</th>
+                <th style={{ padding: '6px', textAlign: 'right' }}>Flaggers</th>
+                <th style={{ padding: '6px', textAlign: 'right' }}>Labor</th>
+                <th style={{ padding: '6px', textAlign: 'right' }}>Travel</th>
+                <th style={{ padding: '6px', textAlign: 'right' }}>Mileage</th>
+                <th style={{ padding: '6px', textAlign: 'right' }}>Total</th>
               </tr>
             </thead>
             <tbody>
               {series.jobs.map((job, idx) => (
                 <tr key={idx} style={{ borderBottom: '1px solid #e0e0e0' }}>
-                  <td style={{ padding: '8px' }}>{job.jobID}</td>
-                  <td style={{ padding: '8px' }}>{job.date}</td>
-                  <td style={{ padding: '8px' }}>{job.location}</td>
-                  <td style={{ padding: '8px', textAlign: 'right' }}>{job.flaggers}</td>
-                  <td style={{ padding: '8px', textAlign: 'right' }}>${job.laborBilling.toFixed(2)}</td>
-                  <td style={{ padding: '8px', textAlign: 'right' }}>${job.travelBilling.toFixed(2)}</td>
-                  <td style={{ padding: '8px', textAlign: 'right' }}>${job.mileageBilling.toFixed(2)}</td>
-                  <td style={{ padding: '8px', textAlign: 'right', fontWeight: '600' }}>
+                  <td style={{ padding: '6px' }}>{job.jobID}</td>
+                  <td style={{ padding: '6px' }}>{job.date}</td>
+                  <td style={{ padding: '6px' }}>{job.location}</td>
+                  <td style={{ padding: '6px', textAlign: 'right' }}>{job.flaggers}</td>
+                  <td style={{ padding: '6px', textAlign: 'right' }}>${job.laborBilling.toFixed(2)}</td>
+                  <td style={{ padding: '6px', textAlign: 'right' }}>${job.travelBilling.toFixed(2)}</td>
+                  <td style={{ padding: '6px', textAlign: 'right' }}>${job.mileageBilling.toFixed(2)}</td>
+                  <td style={{ padding: '6px', textAlign: 'right', fontWeight: '600' }}>
                     ${job.amount.toFixed(2)}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
+
+          {/* REMARKS SECTION */}
+          <RemarksSection jobs={series.jobsData} />
         </div>
       )}
+    </div>
+  );
+}
+
+function RemarksSection({ jobs }) {
+  if (!jobs || jobs.length === 0) return null;
+
+  // Format date as "MARCH 30"
+  const formatDate = (dateString) => {
+    if (!dateString) return '';
+    const [month, day, year] = dateString.split('/');
+    const date = new Date(year, month - 1, day);
+    const monthName = date.toLocaleDateString('en-US', { month: 'long' }).toUpperCase();
+    return `${monthName} ${day}`;
+  };
+
+  // Format time as "9:00AM TO 4:00PM"
+  const formatTimeRange = (actualHours) => {
+    if (!actualHours) return '';
+    
+    // Get all flaggers' times (should be same start/end for the job)
+    const times = Object.values(actualHours);
+    if (times.length === 0) return '';
+    
+    const firstTime = times[0];
+    if (!firstTime.startTime || !firstTime.endTime) return '';
+    
+    const formatTime = (time) => {
+      const [hour, minute] = time.split(':');
+      let h = parseInt(hour);
+      const ampm = h >= 12 ? 'PM' : 'AM';
+      if (h > 12) h -= 12;
+      if (h === 0) h = 12;
+      return `${h}:${minute}${ampm}`;
+    };
+    
+    return `${formatTime(firstTime.startTime)} TO ${formatTime(firstTime.endTime)}`;
+  };
+
+  // Get flaggers with lunch info
+  const getFlaggers = (actualHours) => {
+    if (!actualHours) return '';
+    
+    const flaggers = Object.keys(actualHours);
+    const hasLunchFlaggers = flaggers.filter(f => actualHours[f].hasLunch);
+    
+    if (hasLunchFlaggers.length === flaggers.length) {
+      // All took lunch
+      return `${flaggers.join(' & ')})(LESS LUNCH`;
+    } else if (hasLunchFlaggers.length > 0) {
+      // Some took lunch
+      const lunchList = hasLunchFlaggers.join(' & ');
+      return `${flaggers.join(' & ')})${lunchList ? `(${lunchList} LESS LUNCH` : ''}`;
+    } else {
+      // None took lunch
+      return flaggers.join(' & ');
+    }
+  };
+
+  return (
+    <div style={{
+      marginTop: '12px',
+      padding: '10px',
+      background: '#fff9e6',
+      border: '1px solid #ffd966',
+      borderRadius: '4px'
+    }}>
+      <div style={{ 
+        fontWeight: '600', 
+        fontSize: '11px', 
+        marginBottom: '6px',
+        color: '#7f6000',
+        textTransform: 'uppercase'
+      }}>
+        REMARKS: (STATIONARY FLAG TIME)
+      </div>
+      <div style={{ 
+        fontSize: '11px', 
+        fontFamily: 'monospace',
+        color: '#202124',
+        whiteSpace: 'pre-line',
+        lineHeight: '1.5'
+      }}>
+        {jobs.map((job, idx) => (
+          <div key={idx}>
+            {formatDate(job.initialJobDate)} - {formatTimeRange(job.actualHours)} ({getFlaggers(job.actualHours)})
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
