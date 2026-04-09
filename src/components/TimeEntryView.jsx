@@ -581,6 +581,42 @@ function JobDataEntry({ job, employees, canUpdate, isLast }) {
               }}
             />
           </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '10px', color: '#5f6368', marginBottom: '2px' }}>
+              Truck Mileage
+            </label>
+            <input
+              type="number"
+              value={equipmentData.truckMileage || ''}
+              onChange={(e) => handleEquipmentChange('truckMileage', e.target.value)}
+              placeholder="0"
+              style={{
+                width: '100%',
+                padding: '4px 6px',
+                border: '1px solid #dadce0',
+                borderRadius: '4px',
+                fontSize: '11px'
+              }}
+            />
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: '10px', color: '#5f6368', marginBottom: '2px' }}>
+              TCP
+            </label>
+            <input
+              type="number"
+              value={equipmentData.tcp || ''}
+              onChange={(e) => handleEquipmentChange('tcp', e.target.value)}
+              placeholder="0"
+              style={{
+                width: '100%',
+                padding: '4px 6px',
+                border: '1px solid #dadce0',
+                borderRadius: '4px',
+                fontSize: '11px'
+              }}
+            />
+          </div>
         </div>
       </div>
 
