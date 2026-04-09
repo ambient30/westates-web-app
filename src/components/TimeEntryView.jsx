@@ -279,6 +279,19 @@ function JobDataEntry({ job, employees, canUpdate, isLast }) {
   const [equipmentData, setEquipmentData] = useState(job.actualEquipment || {});
   const [saving, setSaving] = useState(false);
 
+  // Generate 15-minute increment time options (00:00 to 23:45)
+  const generateTimeOptions = () => {
+    const times = [];
+    for (let hour = 0; hour < 24; hour++) {
+      for (let minute = 0; minute < 60; minute += 15) {
+        const h = hour.toString().padStart(2, '0');
+        const m = minute.toString().padStart(2, '0');
+        times.push(`${h}:${m}`);
+      }
+    }
+    return times;
+  };
+
   // Parse dispatched flaggers into array
   const flaggers = (job.dispatchedFlaggers || '').split(',').map(f => f.trim()).filter(Boolean);
 
@@ -642,8 +655,7 @@ function JobDataEntry({ job, employees, canUpdate, isLast }) {
                 <label style={{ display: 'block', fontSize: '10px', color: '#5f6368', marginBottom: '2px' }}>
                   Start Time
                 </label>
-                <input
-                  type="time"
+                <select
                   value={data.startTime || ''}
                   onChange={(e) => handleTimeChange(flagger, 'startTime', e.target.value)}
                   style={{
@@ -653,15 +665,19 @@ function JobDataEntry({ job, employees, canUpdate, isLast }) {
                     borderRadius: '4px',
                     fontSize: '11px'
                   }}
-                />
+                >
+                  <option value="">Select time...</option>
+                  {generateTimeOptions().map(time => (
+                    <option key={time} value={time}>{time}</option>
+                  ))}
+                </select>
               </div>
 
               <div>
                 <label style={{ display: 'block', fontSize: '10px', color: '#5f6368', marginBottom: '2px' }}>
                   End Time
                 </label>
-                <input
-                  type="time"
+                <select
                   value={data.endTime || ''}
                   onChange={(e) => handleTimeChange(flagger, 'endTime', e.target.value)}
                   style={{
@@ -671,7 +687,12 @@ function JobDataEntry({ job, employees, canUpdate, isLast }) {
                     borderRadius: '4px',
                     fontSize: '11px'
                   }}
-                />
+                >
+                  <option value="">Select time...</option>
+                  {generateTimeOptions().map(time => (
+                    <option key={time} value={time}>{time}</option>
+                  ))}
+                </select>
               </div>
 
               <div>

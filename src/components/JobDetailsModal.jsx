@@ -8,7 +8,6 @@ function JobDetailsModal({ job, permissions, onClose, onUpdate }) {
   const [showAssignModal, setShowAssignModal] = useState(false);
 
   const canUpdate = hasPermission(permissions, 'jobs', 'update');
-  const canDelete = hasPermission(permissions, 'jobs', 'delete');
 
   const formatDate = (dateValue) => {
     if (!dateValue) return 'N/A';
@@ -172,11 +171,6 @@ function JobDetailsModal({ job, permissions, onClose, onUpdate }) {
                   Edit
                 </button>
               </>
-            )}
-            {canDelete && (
-              <button className="btn btn-secondary" style={{ color: '#c5221f' }}>
-                Delete
-              </button>
             )}
           </div>
         </div>
