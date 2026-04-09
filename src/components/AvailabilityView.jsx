@@ -102,14 +102,20 @@ function AvailabilityView({ permissions }) {
   }
 
   return (
-    <div>
-      <div className="jobs-header">
-        <h2>Employee Availability</h2>
-        <div className="jobs-actions">
-          <button onClick={() => setShowAddTimeOff(true)} className="btn btn-primary">
+    <div style={{ padding: '12px' }}>
+      {/* Header */}
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center',
+        marginBottom: '16px'
+      }}>
+        <h2 style={{ margin: 0, fontSize: '20px' }}>Employee Availability</h2>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button onClick={() => setShowAddTimeOff(true)} className="btn btn-primary" style={{ padding: '6px 12px', fontSize: '12px' }}>
             + Add Time Off
           </button>
-          <button onClick={loadData} className="btn btn-secondary">
+          <button onClick={loadData} className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '12px' }}>
             Refresh
           </button>
         </div>
@@ -118,15 +124,17 @@ function AvailabilityView({ permissions }) {
       {/* Availability Lookup */}
       <div style={{
         background: 'white',
-        padding: '24px',
-        borderRadius: '8px',
-        marginBottom: '24px',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+        padding: '16px',
+        borderRadius: '4px',
+        marginBottom: '16px',
+        border: '1px solid #e0e0e0'
       }}>
-        <h3 style={{ marginBottom: '16px', color: '#1a73e8' }}>Availability Lookup</h3>
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end' }}>
+        <h3 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: '600', color: '#1a73e8' }}>
+          Availability Lookup
+        </h3>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
           <div style={{ flex: 1 }}>
-            <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500' }}>
+            <label style={{ display: 'block', marginBottom: '4px', fontSize: '11px', fontWeight: '600', color: '#5f6368' }}>
               Select Date
             </label>
             <input
@@ -135,49 +143,50 @@ function AvailabilityView({ permissions }) {
               onChange={(e) => setSelectedDate(e.target.value)}
               style={{
                 width: '100%',
-                padding: '10px',
+                padding: '6px 8px',
                 border: '1px solid #dadce0',
                 borderRadius: '4px',
-                fontSize: '14px'
+                fontSize: '12px'
               }}
             />
           </div>
           <button 
             onClick={checkAvailability}
             className="btn btn-primary"
-            style={{ padding: '10px 24px' }}
+            style={{ padding: '6px 16px', fontSize: '12px' }}
           >
             Check Availability
           </button>
         </div>
 
         {availabilityResults && (
-          <div style={{ marginTop: '24px' }}>
-            <h4 style={{ marginBottom: '12px', color: '#202124' }}>
+          <div style={{ marginTop: '16px' }}>
+            <h4 style={{ margin: '0 0 10px 0', fontSize: '13px', color: '#202124' }}>
               Results for {new Date(availabilityResults.date).toLocaleDateString()}
             </h4>
             
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               {/* Available */}
               <div>
                 <div style={{
                   background: '#e8f5e9',
-                  padding: '12px',
+                  padding: '8px 10px',
                   borderRadius: '4px',
-                  marginBottom: '8px',
+                  marginBottom: '6px',
                   fontWeight: '600',
+                  fontSize: '11px',
                   color: '#2e7d32'
                 }}>
                   ✓ Available ({availabilityResults.available.length})
                 </div>
-                <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                <div style={{ maxHeight: '250px', overflowY: 'auto' }}>
                   {availabilityResults.available.map(emp => (
                     <div key={emp.id} style={{
-                      padding: '8px 12px',
+                      padding: '6px 10px',
                       background: '#f8f9fa',
                       borderRadius: '4px',
                       marginBottom: '4px',
-                      fontSize: '14px'
+                      fontSize: '11px'
                     }}>
                       {emp.fullName}
                     </div>
@@ -189,25 +198,26 @@ function AvailabilityView({ permissions }) {
               <div>
                 <div style={{
                   background: '#ffebee',
-                  padding: '12px',
+                  padding: '8px 10px',
                   borderRadius: '4px',
-                  marginBottom: '8px',
+                  marginBottom: '6px',
                   fontWeight: '600',
+                  fontSize: '11px',
                   color: '#c62828'
                 }}>
                   ✗ Unavailable ({availabilityResults.unavailable.length})
                 </div>
-                <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                <div style={{ maxHeight: '250px', overflowY: 'auto' }}>
                   {availabilityResults.unavailable.map(({ employee, timeOff }) => (
                     <div key={employee.id} style={{
-                      padding: '8px 12px',
+                      padding: '6px 10px',
                       background: '#f8f9fa',
                       borderRadius: '4px',
                       marginBottom: '4px',
-                      fontSize: '14px'
+                      fontSize: '11px'
                     }}>
                       <div style={{ fontWeight: '500' }}>{employee.fullName}</div>
-                      <div style={{ fontSize: '12px', color: '#5f6368', marginTop: '2px' }}>
+                      <div style={{ fontSize: '10px', color: '#5f6368', marginTop: '2px' }}>
                         {timeOff[0].reason || 'Time off'}
                       </div>
                     </div>
@@ -222,33 +232,35 @@ function AvailabilityView({ permissions }) {
       {/* Upcoming Time Off */}
       <div style={{
         background: 'white',
-        padding: '24px',
-        borderRadius: '8px',
-        marginBottom: '24px',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+        padding: '16px',
+        borderRadius: '4px',
+        marginBottom: '16px',
+        border: '1px solid #e0e0e0'
       }}>
-        <h3 style={{ marginBottom: '16px', color: '#1a73e8' }}>Upcoming Time Off</h3>
+        <h3 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: '600', color: '#1a73e8' }}>
+          Upcoming Time Off
+        </h3>
         {upcomingTimeOff.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '40px', color: '#5f6368' }}>
+          <div style={{ textAlign: 'center', padding: '30px', fontSize: '12px', color: '#5f6368' }}>
             No upcoming time off scheduled
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             {upcomingTimeOff.map(t => (
               <div key={t.id} style={{
                 display: 'flex',
                 justifyContent: 'space-between',
                 alignItems: 'center',
-                padding: '12px 16px',
+                padding: '10px 12px',
                 background: '#f8f9fa',
                 borderRadius: '4px',
                 border: '1px solid #e0e0e0'
               }}>
                 <div>
-                  <div style={{ fontWeight: '600', marginBottom: '4px' }}>
+                  <div style={{ fontWeight: '600', fontSize: '12px', marginBottom: '2px' }}>
                     {t.employeeName} {t.employeeNumber && `(#${t.employeeNumber})`}
                   </div>
-                  <div style={{ fontSize: '14px', color: '#5f6368' }}>
+                  <div style={{ fontSize: '11px', color: '#5f6368' }}>
                     {new Date(t.startDate).toLocaleDateString()} - {new Date(t.endDate).toLocaleDateString()}
                     {t.reason && ` • ${t.reason}`}
                     {t.timeRange && ` • ${t.timeRange}`}
@@ -256,8 +268,8 @@ function AvailabilityView({ permissions }) {
                 </div>
                 <button
                   onClick={() => handleDeleteTimeOff(t.id)}
-                  className="btn btn-secondary btn-small"
-                  style={{ color: '#d32f2f' }}
+                  className="btn btn-secondary"
+                  style={{ padding: '4px 8px', fontSize: '10px', color: '#d32f2f' }}
                 >
                   Delete
                 </button>
@@ -270,17 +282,19 @@ function AvailabilityView({ permissions }) {
       {/* All Time Off Records */}
       <div style={{
         background: 'white',
-        padding: '24px',
-        borderRadius: '8px',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+        padding: '16px',
+        borderRadius: '4px',
+        border: '1px solid #e0e0e0'
       }}>
-        <h3 style={{ marginBottom: '16px', color: '#1a73e8' }}>All Time Off Records</h3>
+        <h3 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: '600', color: '#1a73e8' }}>
+          All Time Off Records
+        </h3>
         {timeOffRequests.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '40px', color: '#5f6368' }}>
+          <div style={{ textAlign: 'center', padding: '30px', fontSize: '12px', color: '#5f6368' }}>
             No time off records
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             {timeOffRequests
               .sort((a, b) => new Date(b.startDate) - new Date(a.startDate))
               .map(t => {
@@ -290,17 +304,17 @@ function AvailabilityView({ permissions }) {
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center',
-                    padding: '12px 16px',
+                    padding: '10px 12px',
                     background: isPast ? '#fafafa' : '#f8f9fa',
                     borderRadius: '4px',
                     border: '1px solid #e0e0e0',
                     opacity: isPast ? 0.6 : 1
                   }}>
                     <div>
-                      <div style={{ fontWeight: '600', marginBottom: '4px' }}>
+                      <div style={{ fontWeight: '600', fontSize: '12px', marginBottom: '2px' }}>
                         {t.employeeName} {t.employeeNumber && `(#${t.employeeNumber})`}
                       </div>
-                      <div style={{ fontSize: '14px', color: '#5f6368' }}>
+                      <div style={{ fontSize: '11px', color: '#5f6368' }}>
                         {new Date(t.startDate).toLocaleDateString()} - {new Date(t.endDate).toLocaleDateString()}
                         {t.reason && ` • ${t.reason}`}
                         {t.timeRange && ` • ${t.timeRange}`}
@@ -308,8 +322,8 @@ function AvailabilityView({ permissions }) {
                     </div>
                     <button
                       onClick={() => handleDeleteTimeOff(t.id)}
-                      className="btn btn-secondary btn-small"
-                      style={{ color: '#d32f2f' }}
+                      className="btn btn-secondary"
+                      style={{ padding: '4px 8px', fontSize: '10px', color: '#d32f2f' }}
                     >
                       Delete
                     </button>

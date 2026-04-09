@@ -54,14 +54,20 @@ function UserManager({ permissions }) {
   }
 
   return (
-    <div>
-      <div className="jobs-header">
-        <h2>Users</h2>
-        <div className="jobs-actions">
-          <button onClick={() => setShowInviteModal(true)} className="btn btn-primary">
+    <div style={{ padding: '12px' }}>
+      {/* Header */}
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center',
+        marginBottom: '16px'
+      }}>
+        <h2 style={{ margin: 0, fontSize: '20px' }}>Users</h2>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button onClick={() => setShowInviteModal(true)} className="btn btn-primary" style={{ padding: '6px 12px', fontSize: '12px' }}>
             + Add User
           </button>
-          <button onClick={loadData} className="btn btn-secondary">
+          <button onClick={loadData} className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '12px' }}>
             Refresh
           </button>
         </div>
@@ -126,11 +132,11 @@ function UserCard({ user, roleName, roles, canUpdate, canDelete, onUpdate }) {
   };
 
   return (
-    <div className="job-card">
-      <div className="job-header">
-        <span className="job-id">{user.fullName || user.email}</span>
+    <div className="job-card" style={{ padding: '12px' }}>
+      <div className="job-header" style={{ marginBottom: '10px' }}>
+        <span className="job-id" style={{ fontSize: '13px' }}>{user.fullName || user.email}</span>
         {isPending && (
-          <span className="job-series" style={{ background: '#fdd835', color: '#000' }}>
+          <span className="job-series" style={{ background: '#fdd835', color: '#000', fontSize: '10px', padding: '2px 6px' }}>
             Pending
           </span>
         )}
@@ -138,14 +144,18 @@ function UserCard({ user, roleName, roles, canUpdate, canDelete, onUpdate }) {
 
       <div className="job-info">
         <div className="job-info-item">
-          <div className="job-info-label">Email</div>
-          <div className="job-info-value">{user.email}</div>
+          <div className="job-info-label" style={{ fontSize: '10px' }}>Email</div>
+          <div className="job-info-value" style={{ fontSize: '11px' }}>{user.email}</div>
         </div>
         <div className="job-info-item">
-          <div className="job-info-label">Role</div>
-          <div className="job-info-value">
+          <div className="job-info-label" style={{ fontSize: '10px' }}>Role</div>
+          <div className="job-info-value" style={{ fontSize: '11px' }}>
             {editing ? (
-              <select value={selectedRole} onChange={(e) => setSelectedRole(e.target.value)}>
+              <select 
+                value={selectedRole} 
+                onChange={(e) => setSelectedRole(e.target.value)}
+                style={{ fontSize: '11px', padding: '4px' }}
+              >
                 {roles.map(role => (
                   <option key={role.id} value={role.id}>{role.roleName}</option>
                 ))}
@@ -157,24 +167,24 @@ function UserCard({ user, roleName, roles, canUpdate, canDelete, onUpdate }) {
         </div>
       </div>
 
-      <div className="job-actions">
+      <div className="job-actions" style={{ marginTop: '10px' }}>
         {canUpdate && !editing && (
-          <button onClick={() => setEditing(true)} className="btn btn-primary btn-small">
+          <button onClick={() => setEditing(true)} className="btn btn-primary btn-small" style={{ padding: '4px 8px', fontSize: '10px' }}>
             {isPending ? 'Assign Role' : 'Change Role'}
           </button>
         )}
         {editing && (
           <>
-            <button onClick={handleUpdateRole} className="btn btn-primary btn-small">
+            <button onClick={handleUpdateRole} className="btn btn-primary btn-small" style={{ padding: '4px 8px', fontSize: '10px' }}>
               Save
             </button>
-            <button onClick={() => setEditing(false)} className="btn btn-secondary btn-small">
+            <button onClick={() => setEditing(false)} className="btn btn-secondary btn-small" style={{ padding: '4px 8px', fontSize: '10px' }}>
               Cancel
             </button>
           </>
         )}
         {canDelete && (
-          <button onClick={handleDelete} className="btn btn-secondary btn-small">
+          <button onClick={handleDelete} className="btn btn-secondary btn-small" style={{ padding: '4px 8px', fontSize: '10px' }}>
             Remove
           </button>
         )}

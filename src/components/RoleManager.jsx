@@ -38,14 +38,20 @@ function RoleManager({ permissions }) {
   }
 
   return (
-    <div>
-      <div className="jobs-header">
-        <h2>Roles</h2>
-        <div className="jobs-actions">
-          <button onClick={() => setCreatingRole(true)} className="btn btn-primary">
+    <div style={{ padding: '12px' }}>
+      {/* Header */}
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center',
+        marginBottom: '16px'
+      }}>
+        <h2 style={{ margin: 0, fontSize: '20px' }}>Roles</h2>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button onClick={() => setCreatingRole(true)} className="btn btn-primary" style={{ padding: '6px 12px', fontSize: '12px' }}>
             + Add Role
           </button>
-          <button onClick={loadRoles} className="btn btn-secondary">
+          <button onClick={loadRoles} className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '12px' }}>
             Refresh
           </button>
         </div>
@@ -110,35 +116,35 @@ function RoleCard({ role, onEdit, onDelete }) {
   }, 0);
 
   return (
-    <div className="job-card">
-      <div className="job-header">
-        <span className="job-id">{role.roleName}</span>
+    <div className="job-card" style={{ padding: '12px' }}>
+      <div className="job-header" style={{ marginBottom: '10px' }}>
+        <span className="job-id" style={{ fontSize: '13px' }}>{role.roleName}</span>
         {role.isSystemRole && (
-          <span className="job-series">System Role</span>
+          <span className="job-series" style={{ fontSize: '10px', padding: '2px 6px' }}>System Role</span>
         )}
       </div>
 
       <div className="job-info">
         <div className="job-info-item">
-          <div className="job-info-label">Permissions</div>
-          <div className="job-info-value">{permissionCount} granted</div>
+          <div className="job-info-label" style={{ fontSize: '10px' }}>Permissions</div>
+          <div className="job-info-value" style={{ fontSize: '11px' }}>{permissionCount} granted</div>
         </div>
         <div className="job-info-item">
-          <div className="job-info-label">Created</div>
-          <div className="job-info-value">
+          <div className="job-info-label" style={{ fontSize: '10px' }}>Created</div>
+          <div className="job-info-value" style={{ fontSize: '11px' }}>
             {role.createdAt?.toDate?.()?.toLocaleDateString() || 'Unknown'}
           </div>
         </div>
       </div>
 
-      <div className="job-actions">
+      <div className="job-actions" style={{ marginTop: '10px' }}>
         {onEdit && (
-          <button onClick={() => onEdit(role)} className="btn btn-secondary btn-small">
+          <button onClick={() => onEdit(role)} className="btn btn-secondary btn-small" style={{ padding: '4px 8px', fontSize: '10px' }}>
             Edit
           </button>
         )}
         {onDelete && !role.isSystemRole && (
-          <button onClick={handleDelete} className="btn btn-secondary btn-small">
+          <button onClick={handleDelete} className="btn btn-secondary btn-small" style={{ padding: '4px 8px', fontSize: '10px' }}>
             Delete
           </button>
         )}
@@ -228,12 +234,12 @@ function RoleModal({ role, onClose, onSave }) {
             <h3 style={{ marginTop: '24px', marginBottom: '16px' }}>Permissions</h3>
             
             <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                 <thead>
                   <tr style={{ borderBottom: '2px solid #e0e0e0' }}>
-                    <th style={{ textAlign: 'left', padding: '12px' }}>Collection</th>
+                    <th style={{ textAlign: 'left', padding: '8px 10px' }}>Collection</th>
                     {actions.map(action => (
-                      <th key={action} style={{ textAlign: 'center', padding: '12px', textTransform: 'capitalize' }}>
+                      <th key={action} style={{ textAlign: 'center', padding: '8px 10px', textTransform: 'capitalize' }}>
                         {action}
                       </th>
                     ))}
@@ -242,27 +248,27 @@ function RoleModal({ role, onClose, onSave }) {
                 <tbody>
                   {collections.map(coll => (
                     <tr key={coll} style={{ borderBottom: '1px solid #e0e0e0' }}>
-                      <td style={{ padding: '12px', textTransform: 'capitalize', fontWeight: '500' }}>
+                      <td style={{ padding: '8px 10px', textTransform: 'capitalize', fontWeight: '500' }}>
                         {coll}
                       </td>
                       {actions.map(action => (
-                        <td key={action} style={{ textAlign: 'center', padding: '12px' }}>
+                        <td key={action} style={{ textAlign: 'center', padding: '8px 10px' }}>
                           <input
                             type="checkbox"
                             checked={perms[coll]?.[action] || false}
                             onChange={() => togglePermission(coll, action)}
-                            style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                            style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                           />
                         </td>
                       ))}
                     </tr>
                   ))}
                   <tr style={{ borderBottom: '1px solid #e0e0e0' }}>
-                    <td style={{ padding: '12px', textTransform: 'capitalize', fontWeight: '500' }}>
+                    <td style={{ padding: '8px 10px', textTransform: 'capitalize', fontWeight: '500' }}>
                       Audit Log
                     </td>
                     <td colSpan="3"></td>
-                    <td style={{ textAlign: 'center', padding: '12px' }}>
+                    <td style={{ textAlign: 'center', padding: '8px 10px' }}>
                       <input
                         type="checkbox"
                         checked={perms.auditLog?.read || false}
@@ -270,7 +276,7 @@ function RoleModal({ role, onClose, onSave }) {
                           ...prev,
                           auditLog: { read: !prev.auditLog?.read }
                         }))}
-                        style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                        style={{ width: '16px', height: '16px', cursor: 'pointer' }}
                       />
                     </td>
                   </tr>
