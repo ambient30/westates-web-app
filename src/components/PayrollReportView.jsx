@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
-import { collection, getDocs, doc, getDoc } from '../utils/firestoreTracker';
+import { collection, onSnapshot } from '../utils/firestoreTracker';
 import { db } from '../firebase';
-import DailyMinimumModal from './DailyMinimumModal';
 
 // ============================================
 // HELPER FUNCTIONS
@@ -57,9 +56,9 @@ function isWeekend(dateString, weekendDuration) {
   return weekendDuration.toLowerCase().includes(dayName.toLowerCase());
 }
 
-// ============================================
-// MAIN COMPONENT
-// ============================================
+function isEPUDJob(job) {
+  return job.billing?.toUpperCase().includes('EPUD');
+}
 
 function PayrollReportView({ permissions }) {
   const [jobs, setJobs] = useState([]);
@@ -69,53 +68,47 @@ function PayrollReportView({ permissions }) {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [payrollData, setPayrollData] = useState(null);
-  const [stipendAmount, setStipendAmount] = useState(25);
-  const [conflicts, setConflicts] = useState(null);
 
   useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = async () => {
-    try {
-      setLoading(true);
-
-      const jobsSnapshot = await getDocs(collection(db, 'jobs'));
-      const jobsData = jobsSnapshot.docs.map(doc => ({
+    console.log('🔴 Setting up REAL-TIME listener for payroll...');
+    
+    const jobsRef = collection(db, 'jobs');
+    const employeesRef = collection(db, 'employees');
+    const ratesRef = collection(db, 'rates');
+    
+    const jobsUnsubscribe = onSnapshot(jobsRef, (snapshot) => {
+      const jobsData = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
       setJobs(jobsData);
-
-      const employeesSnapshot = await getDocs(collection(db, 'employees'));
-      const employeesData = employeesSnapshot.docs.map(doc => {
-        const data = doc.data();
-        return {
-          id: doc.id,
-          name: doc.id,
-          ...data
-        };
-      });
-      
+    });
+    
+    const employeesUnsubscribe = onSnapshot(employeesRef, (snapshot) => {
+      const employeesData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        name: doc.id,
+        ...doc.data()
+      }));
       setEmployees(employeesData);
-
-      const ratesSnapshot = await getDocs(collection(db, 'rates'));
-      const ratesData = ratesSnapshot.docs.map(doc => ({
+    });
+    
+    const ratesUnsubscribe = onSnapshot(ratesRef, (snapshot) => {
+      const ratesData = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
       setRates(ratesData);
-
-      const settingsDoc = await getDoc(doc(db, 'settings', 'global'));
-      if (settingsDoc.exists()) {
-        setStipendAmount(settingsDoc.data().signStipendAmount || 25);
-      }
-    } catch (err) {
-      console.error('Error loading data:', err);
-    } finally {
       setLoading(false);
-    }
-  };
+    });
+    
+    return () => {
+      console.log('🔴 Cleaning up payroll listeners');
+      jobsUnsubscribe();
+      employeesUnsubscribe();
+      ratesUnsubscribe();
+    };
+  }, []);
 
   const generatePayroll = () => {
     if (!startDate || !endDate) {
@@ -133,103 +126,15 @@ function PayrollReportView({ permissions }) {
       return jobDate >= start && jobDate <= end;
     });
 
-    // Detect ALL conflicts - check if employee has multiple jobs same day where ANY job < minimum
-    const employeeDayJobs = {};
+    console.log('Relevant jobs for payroll:', relevantJobs.length);
 
-    relevantJobs.forEach(job => {
-      Object.keys(job.actualHours || {}).forEach(employeeName => {
-        const key = `${employeeName}-${job.initialJobDate}`;
-        if (!employeeDayJobs[key]) {
-          employeeDayJobs[key] = {
-            employeeName,
-            date: job.initialJobDate,
-            jobs: []
-          };
-        }
-        employeeDayJobs[key].jobs.push(job);
-      });
-    });
-
-    // Find ALL conflicts (show all in one modal)
-    const detectedConflicts = [];
-    Object.values(employeeDayJobs).forEach(dayInfo => {
-      // Conflict exists if: multiple jobs on same day AND any individual job < minimum
-      if (dayInfo.jobs.length > 1) {
-        const jobDetails = [];
-        let hasConflict = false;
-        let totalHours = 0;
-        
-        dayInfo.jobs.forEach(job => {
-          const timeData = job.actualHours[dayInfo.employeeName];
-          const hours = parseFloat(timeData?.hoursWorked || 0);
-          totalHours += hours;
-          
-          const jobRate = rates.find(r => r.id === job.rateId);
-          const minimum = parseFloat(jobRate?.hourMinimum) || 4;
-          
-          // Check if THIS individual job is below minimum
-          if (hours < minimum) {
-            hasConflict = true;
-          }
-          
-          jobDetails.push({
-            jobID: job.jobID,
-            hours: hours
-          });
-        });
-
-        // Only add if there's actually a conflict (at least one job < minimum)
-        if (hasConflict) {
-          const firstJob = dayInfo.jobs[0];
-          const jobRate = rates.find(r => r.id === firstJob.rateId);
-          const minimum = parseFloat(jobRate?.hourMinimum) || 4;
-          const emp = employees.find(e => e.name === dayInfo.employeeName);
-          const payRate = parseFloat(emp?.payRate) || 0;
-
-          detectedConflicts.push({
-            employeeName: dayInfo.employeeName,
-            date: dayInfo.date,
-            jobs: jobDetails,
-            totalHours,
-            minimum,
-            payRate
-          });
-        }
-      }
-    });
-
-    // If conflicts exist, show ALL in one modal
-    if (detectedConflicts.length > 0) {
-      setConflicts(detectedConflicts);
-      return;
-    }
-
-    // No conflicts, proceed normally
-    processPayroll(relevantJobs, {});
-  };
-
-  const handleConflictResolution = (resolutions) => {
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-
-    const relevantJobs = jobs.filter(job => {
-      if (!job.initialJobDate || !job.actualHours) return false;
-      const [month, day, year] = job.initialJobDate.split('/');
-      const jobDate = new Date(year, month - 1, day);
-      return jobDate >= start && jobDate <= end;
-    });
-
-    // Process payroll with all resolutions
-    processPayroll(relevantJobs, resolutions);
-    setConflicts(null);
-  };
-
-  const processPayroll = (relevantJobs, resolutions) => {
     const employeePayroll = {};
 
     relevantJobs.forEach(job => {
       const jobRate = rates.find(r => r.id === job.rateId);
+      
       if (!jobRate) {
+        console.log('No rate found for job:', job.jobID);
         return;
       }
 
@@ -237,242 +142,219 @@ function PayrollReportView({ permissions }) {
       const isHolidayJob = isHoliday(job.initialJobDate);
       const isWeekendJob = isWeekend(job.initialJobDate, jobRate.weekendDuration);
       const isNightJob = isNightTime(job.initialJobTime, jobRate.overtimeNights);
+      const isEPUD = isEPUDJob(job);
 
       Object.entries(job.actualHours || {}).forEach(([employeeName, timeData]) => {
         if (!employeePayroll[employeeName]) {
           const emp = employees.find(e => e.name === employeeName);
           employeePayroll[employeeName] = {
             employeeName,
-            payRate: emp?.payRate || 0,
-            jobsByDate: {},
+            employeePayRate: emp?.payRate || 0,
             jobs: [],
             totalRegularHours: 0,
+            totalRegularPay: 0,
             totalOTHours: 0,
+            totalOTPay: 0,
             totalHolidayHours: 0,
+            totalHolidayPay: 0,
+            totalPWRegularHours: 0,
+            totalPWRegularPay: 0,
+            totalPWOTHours: 0,
+            totalPWOTPay: 0,
+            totalFringeHours: 0,
+            totalFringePay: 0,
             totalTravelHours: 0,
-            totalFringe: 0,
-            totalStipends: 0,
+            totalTravelPay: 0,
+            totalSignStipends: 0,
+            totalStipendPay: 0,
+            totalMileage: 0,
+            totalMileagePay: 0,
             grossPay: 0
           };
         }
 
-        const hoursWorked = parseFloat(timeData.hoursWorked || 0);
+        let totalHours = parseFloat(timeData.totalHours || timeData.hoursWorked || 0);
+        
+        // If lunch was taken and only hoursWorked exists, deduct lunch
+        if (timeData.hasLunch && !timeData.totalHours) {
+          totalHours -= 0.5;
+        }
+
+        const travelHours = parseFloat(timeData.travelHours || 0);
+        const travelMiles = parseFloat(timeData.travelMiles || 0);
         const signStipends = parseInt(timeData.signStipends || 0);
+
+        // Get employee info
+        const emp = employees.find(e => e.name === employeeName);
+        const employeePayRate = parseFloat(emp?.payRate) || 0;
 
         let regularRate = 0;
         let otRate = 0;
         let holidayRate = 0;
         let fringeRate = 0;
+        let travelRate = 0;
+        let mileageRate = 0;
+        let stipendAmount = 25;
 
         if (isPrevailingWage) {
+          // Prevailing Wage: Use flaggerPay from rate card
           regularRate = parseFloat(jobRate.flaggerPay) || 0;
           otRate = regularRate * 1.5;
           holidayRate = regularRate * (parseFloat(jobRate.holiday) || 2);
           fringeRate = parseFloat(jobRate.fringeBenefit) || 0;
+          // Prevailing wage: NO travel/mileage pay
+          travelRate = 0;
+          mileageRate = 0;
         } else {
-          const emp = employees.find(e => e.name === employeeName);
-          regularRate = parseFloat(emp?.payRate) || 0;
+          // Regular job: Use employee's payRate
+          regularRate = employeePayRate;
           otRate = regularRate * 1.5;
           holidayRate = regularRate * (parseFloat(jobRate.holiday) || 2);
+          travelRate = regularRate; // Use employee rate for travel
+          mileageRate = parseFloat(jobRate.mileage) || 0;
         }
 
         let regularHours = 0;
         let otHours = 0;
         let holidayHours = 0;
 
+        const otStart = parseInt(jobRate.otStarts) || 8;
+
         if (isHolidayJob) {
-          holidayHours = hoursWorked;
+          holidayHours = totalHours;
         } else if (isWeekendJob || isNightJob) {
-          otHours = hoursWorked;
+          otHours = totalHours;
         } else {
-          const otStart = parseInt(jobRate.otStarts) || 8;
-          regularHours = Math.min(hoursWorked, otStart);
-          otHours = Math.max(0, hoursWorked - otStart);
+          regularHours = Math.min(totalHours, otStart);
+          otHours = Math.max(0, totalHours - otStart);
         }
 
-        let travelPay = 0;
-        let billableTravelHours = 0;
-
-        if (!isPrevailingWage) {
-          const actualTravelMinutes = parseFloat(timeData.actualTravelTime || 0);
-          
-          if (actualTravelMinutes > 0) {
-            const roundtripHours = actualTravelMinutes / 60;
-            const billable = roundtripHours - 1;
-            
-            if (billable >= 1) {
-              billableTravelHours = billable;
-              travelPay = billableTravelHours * regularRate;
-            }
-          }
+        const minimumHours = parseFloat(jobRate.hourMinimum) || 4;
+        const totalActualHours = regularHours + otHours + holidayHours;
+        
+        if (totalActualHours < minimumHours) {
+          const shortfall = minimumHours - totalActualHours;
+          regularHours += shortfall;
         }
 
         const regularPay = regularHours * regularRate;
         const otPay = otHours * otRate;
         const holidayPay = holidayHours * holidayRate;
-        const fringePay = hoursWorked * fringeRate;
-        const stipendPay = signStipends * stipendAmount;
 
-        const jobDate = job.initialJobDate;
-        if (!employeePayroll[employeeName].jobsByDate[jobDate]) {
-          employeePayroll[employeeName].jobsByDate[jobDate] = [];
+        // Calculate travel/mileage per flagger
+        let travelPay = 0;
+        let mileagePay = 0;
+        
+        // EPUD and Prevailing Wage: NO travel/mileage pay to employees
+        if (!isPrevailingWage && !isEPUD) {
+          // Regular jobs only: Apply thresholds
+          // Travel: Must be >= 1 hour
+          if (travelHours >= 1) {
+            travelPay = travelHours * travelRate;
+          }
+          
+          // Mileage: Must be > 30 miles
+          if (travelMiles > 30) {
+            mileagePay = travelMiles * mileageRate;
+          }
         }
 
-        employeePayroll[employeeName].jobsByDate[jobDate].push({
+        const fringePay = totalHours * fringeRate;
+        const stipendPay = signStipends * stipendAmount;
+
+        const jobTotal = regularPay + otPay + holidayPay + travelPay + mileagePay + fringePay + stipendPay;
+
+        employeePayroll[employeeName].jobs.push({
           jobID: job.jobID,
-          date: jobDate,
+          date: job.initialJobDate,
+          jobData: job,
+          rateCard: jobRate,
+          employeePayRate: employeePayroll[employeeName].employeePayRate,
+          isPrevailingWage,
+          isHoliday: isHolidayJob,
+          isWeekend: isWeekendJob,
+          isNight: isNightJob,
+          isEPUD,
           regularHours,
           otHours,
           holidayHours,
-          travelHours: billableTravelHours,
-          fringeHours: hoursWorked,
+          travelHours,
+          travelMiles,
           signStipends,
           regularPay,
           otPay,
           holidayPay,
           travelPay,
+          mileagePay,
           fringePay,
           stipendPay,
-          isPrevailingWage,
-          hourlyMinimum: parseFloat(jobRate.hourMinimum) || 4,
-          regularRate
+          total: jobTotal,
+          hasLunch: timeData.hasLunch
         });
-      });
-    });
 
-    // Apply resolutions and daily minimums
-    Object.values(employeePayroll).forEach(employee => {
-      Object.entries(employee.jobsByDate).forEach(([date, dailyJobs]) => {
-        const dailyRegularHours = dailyJobs.reduce((sum, j) => sum + j.regularHours, 0);
-        const dailyOTHours = dailyJobs.reduce((sum, j) => sum + j.otHours, 0);
-        const dailyHolidayHours = dailyJobs.reduce((sum, j) => sum + j.holidayHours, 0);
-        const dailyTotalHours = dailyRegularHours + dailyOTHours + dailyHolidayHours;
-
-        const dailyMinimum = Math.max(...dailyJobs.map(j => j.hourlyMinimum));
-        const regularRate = dailyJobs[0].regularRate;
-
-        const resolutionKey = `${employee.employeeName}-${date}`;
-        const resolution = resolutions[resolutionKey];
-
-        let adjustedJobHours = [];
-
-        if (resolution === 'combine') {
-          let adjustedRegularHours = dailyRegularHours;
-          if (dailyTotalHours < dailyMinimum) {
-            adjustedRegularHours += (dailyMinimum - dailyTotalHours);
-          }
-          
-          dailyJobs.forEach((job, index) => {
-            adjustedJobHours.push({
-              ...job,
-              adjustedRegularHours: index === 0 ? adjustedRegularHours : job.regularHours,
-              isFirstJobOfDay: index === 0
-            });
-          });
-
-        } else if (resolution === 'each') {
-          dailyJobs.forEach((job) => {
-            const jobTotalHours = job.regularHours + job.otHours + job.holidayHours;
-            let adjustedRegularHours = job.regularHours;
-            
-            if (jobTotalHours < dailyMinimum) {
-              adjustedRegularHours += (dailyMinimum - jobTotalHours);
-            }
-
-            adjustedJobHours.push({
-              ...job,
-              adjustedRegularHours,
-              isFirstJobOfDay: true
-            });
-          });
-
-        } else if (resolution?.startsWith('select-')) {
-          const selectedJobsString = resolution.substring(7); // Remove 'select-'
-          const selectedJobs = selectedJobsString.split('-').filter(s => s !== '');
-          
-          dailyJobs.forEach((job, index) => {
-            const isSelected = selectedJobs.includes(`job${index}`);
-            const jobTotalHours = job.regularHours + job.otHours + job.holidayHours;
-            let adjustedRegularHours = job.regularHours;
-            
-            if (isSelected && jobTotalHours < dailyMinimum) {
-              adjustedRegularHours += (dailyMinimum - jobTotalHours);
-            }
-
-            adjustedJobHours.push({
-              ...job,
-              adjustedRegularHours,
-              isFirstJobOfDay: true
-            });
-          });
-
+        // Aggregate totals
+        if (isPrevailingWage) {
+          employeePayroll[employeeName].totalPWRegularHours += regularHours;
+          employeePayroll[employeeName].totalPWRegularPay += regularPay;
+          employeePayroll[employeeName].totalPWOTHours += otHours;
+          employeePayroll[employeeName].totalPWOTPay += otPay;
+          employeePayroll[employeeName].totalFringeHours += totalHours;
+          employeePayroll[employeeName].totalFringePay += fringePay;
         } else {
-          let adjustedRegularHours = dailyRegularHours;
-          if (dailyTotalHours < dailyMinimum) {
-            adjustedRegularHours += (dailyMinimum - dailyTotalHours);
-          }
-
-          dailyJobs.forEach((job, index) => {
-            adjustedJobHours.push({
-              ...job,
-              adjustedRegularHours: index === 0 ? adjustedRegularHours : job.regularHours,
-              isFirstJobOfDay: index === 0
-            });
-          });
+          employeePayroll[employeeName].totalRegularHours += regularHours;
+          employeePayroll[employeeName].totalRegularPay += regularPay;
+          employeePayroll[employeeName].totalOTHours += otHours;
+          employeePayroll[employeeName].totalOTPay += otPay;
+          employeePayroll[employeeName].totalTravelHours += travelHours;
+          employeePayroll[employeeName].totalTravelPay += travelPay;
+          employeePayroll[employeeName].totalMileage += travelMiles;
+          employeePayroll[employeeName].totalMileagePay += mileagePay;
         }
 
-        adjustedJobHours.forEach((job) => {
-          const adjustedRegularPay = job.adjustedRegularHours * regularRate;
-          const jobTotal = adjustedRegularPay + job.otPay + job.holidayPay + job.travelPay + job.fringePay + job.stipendPay;
-
-          employee.jobs.push({
-            ...job,
-            total: job.isFirstJobOfDay ? jobTotal : 0,
-            dailyMinimumApplied: dailyTotalHours < dailyMinimum,
-            dailyTotalHours
-          });
-
-          if (job.isFirstJobOfDay) {
-            employee.totalRegularHours += job.adjustedRegularHours;
-            employee.totalOTHours += job.otHours;
-            employee.totalHolidayHours += job.holidayHours;
-            employee.totalTravelHours += job.travelHours;
-            employee.totalFringe += job.fringePay;
-            employee.totalStipends += job.signStipends;
-            employee.grossPay += jobTotal;
-          }
-        });
+        employeePayroll[employeeName].totalHolidayHours += holidayHours;
+        employeePayroll[employeeName].totalHolidayPay += holidayPay;
+        employeePayroll[employeeName].totalSignStipends += signStipends;
+        employeePayroll[employeeName].totalStipendPay += stipendPay;
+        employeePayroll[employeeName].grossPay += jobTotal;
       });
     });
 
-    setPayrollData(Object.values(employeePayroll));
+    // Sort alphabetically
+    const sortedPayroll = Object.values(employeePayroll).sort((a, b) => 
+      a.employeeName.localeCompare(b.employeeName)
+    );
+
+    console.log('Generated payroll:', sortedPayroll);
+    setPayrollData(sortedPayroll);
   };
 
   const exportToCSV = () => {
     if (!payrollData) return;
 
-    const headers = [
-      'Employee',
-      'Regular Hours',
-      'OT Hours',
-      'Travel Hours',
-      'Stipends',
-      'Gross Pay'
-    ];
+    const rows = [];
+    rows.push(['Employee', 'Reg Hrs', 'Reg Pay', 'OT Hrs', 'OT Pay', 'PW Reg Hrs', 'PW Reg Pay', 'PW OT Hrs', 'PW OT Pay', 'Fringe Hrs', 'Fringe Pay', 'Stipends', 'Stipend Pay', 'Mileage', 'Gross Pay']);
 
-    const rows = payrollData.map(emp => [
-      emp.employeeName,
-      emp.totalRegularHours.toFixed(2),
-      emp.totalOTHours.toFixed(2),
-      emp.totalTravelHours.toFixed(2),
-      emp.totalStipends,
-      emp.grossPay.toFixed(2)
-    ]);
+    payrollData.forEach(emp => {
+      rows.push([
+        emp.employeeName,
+        emp.totalRegularHours.toFixed(2),
+        emp.totalRegularPay.toFixed(2),
+        emp.totalOTHours.toFixed(2),
+        emp.totalOTPay.toFixed(2),
+        emp.totalPWRegularHours.toFixed(2),
+        emp.totalPWRegularPay.toFixed(2),
+        emp.totalPWOTHours.toFixed(2),
+        emp.totalPWOTPay.toFixed(2),
+        emp.totalFringeHours.toFixed(2),
+        emp.totalFringePay.toFixed(2),
+        emp.totalSignStipends,
+        emp.totalStipendPay.toFixed(2),
+        emp.totalMileage.toFixed(0),
+        emp.grossPay.toFixed(2)
+      ]);
+    });
 
-    const csv = [
-      headers.join(','),
-      ...rows.map(row => row.join(','))
-    ].join('\n');
+    const csv = rows.map(row => row.join(',')).join('\n');
 
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
@@ -492,28 +374,33 @@ function PayrollReportView({ permissions }) {
   }
 
   return (
-    <div>
-      <div className="jobs-header">
-        <h2>Payroll Report</h2>
-        <div className="jobs-actions">
-          <button onClick={loadData} className="btn btn-secondary">
-            Refresh
-          </button>
+    <div style={{ padding: '12px' }}>
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center',
+        marginBottom: '16px'
+      }}>
+        <h2 style={{ margin: 0, fontSize: '20px' }}>Payroll Report</h2>
+        <div style={{ fontSize: '11px', color: '#4caf50' }}>
+          🟢 Live sync active
         </div>
       </div>
 
       <div style={{
         background: 'white',
-        padding: '24px',
-        borderRadius: '8px',
-        marginBottom: '24px',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+        padding: '16px',
+        borderRadius: '4px',
+        marginBottom: '16px',
+        border: '1px solid #e0e0e0'
       }}>
-        <h3 style={{ marginBottom: '16px', color: '#1a73e8' }}>Select Pay Period</h3>
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
-          <div style={{ flex: '1', minWidth: '200px' }}>
-            <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500' }}>
-              Start Date (Sunday)
+        <h3 style={{ margin: '0 0 12px 0', fontSize: '14px', fontWeight: '600' }}>
+          Select Pay Period
+        </h3>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          <div style={{ flex: '1', minWidth: '150px' }}>
+            <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px', fontWeight: '600', color: '#5f6368' }}>
+              Start Date
             </label>
             <input
               type="date"
@@ -521,16 +408,16 @@ function PayrollReportView({ permissions }) {
               onChange={(e) => setStartDate(e.target.value)}
               style={{
                 width: '100%',
-                padding: '10px',
+                padding: '6px 8px',
                 border: '1px solid #dadce0',
                 borderRadius: '4px',
-                fontSize: '14px'
+                fontSize: '12px'
               }}
             />
           </div>
-          <div style={{ flex: '1', minWidth: '200px' }}>
-            <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500' }}>
-              End Date (Saturday)
+          <div style={{ flex: '1', minWidth: '150px' }}>
+            <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px', fontWeight: '600', color: '#5f6368' }}>
+              End Date
             </label>
             <input
               type="date"
@@ -538,17 +425,17 @@ function PayrollReportView({ permissions }) {
               onChange={(e) => setEndDate(e.target.value)}
               style={{
                 width: '100%',
-                padding: '10px',
+                padding: '6px 8px',
                 border: '1px solid #dadce0',
                 borderRadius: '4px',
-                fontSize: '14px'
+                fontSize: '12px'
               }}
             />
           </div>
           <button 
             onClick={generatePayroll}
             className="btn btn-primary"
-            style={{ padding: '10px 24px' }}
+            style={{ padding: '6px 16px', fontSize: '12px' }}
           >
             Generate Payroll
           </button>
@@ -556,7 +443,7 @@ function PayrollReportView({ permissions }) {
             <button 
               onClick={exportToCSV}
               className="btn btn-secondary"
-              style={{ padding: '10px 24px' }}
+              style={{ padding: '6px 16px', fontSize: '12px' }}
             >
               Export CSV
             </button>
@@ -565,54 +452,41 @@ function PayrollReportView({ permissions }) {
       </div>
 
       {payrollData && (
-        <div style={{
-          background: 'white',
-          borderRadius: '8px',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-          overflow: 'hidden'
-        }}>
+        <div>
           <div style={{
-            padding: '20px',
-            background: '#1a73e8',
-            color: 'white',
+            background: 'white',
+            padding: '16px',
+            borderRadius: '4px',
+            marginBottom: '12px',
+            border: '1px solid #e0e0e0',
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center'
           }}>
-            <h3 style={{ margin: 0 }}>Payroll Summary</h3>
-            <div style={{ fontSize: '24px', fontWeight: '600' }}>
+            <h3 style={{ margin: 0, fontSize: '16px', color: '#1a73e8' }}>Total Payroll</h3>
+            <div style={{ fontSize: '24px', fontWeight: '600', color: '#2e7d32' }}>
               ${payrollData.reduce((sum, emp) => sum + emp.grossPay, 0).toFixed(2)}
             </div>
           </div>
 
-          <div style={{ padding: '20px' }}>
-            {payrollData.map(emp => (
-              <EmployeePayrollCard key={emp.employeeName} employee={emp} />
-            ))}
-          </div>
+          {payrollData.map(emp => (
+            <EmployeePayrollCard key={emp.employeeName} employee={emp} />
+          ))}
         </div>
       )}
 
       {!payrollData && !loading && (
         <div style={{
           background: 'white',
-          padding: '60px 24px',
-          borderRadius: '8px',
+          padding: '40px 20px',
+          borderRadius: '4px',
           textAlign: 'center',
           color: '#5f6368',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+          border: '1px solid #e0e0e0'
         }}>
-          <h3 style={{ marginBottom: '8px', color: '#202124' }}>No Payroll Generated</h3>
-          <p>Select a date range and click "Generate Payroll" to view employee pay</p>
+          <h3 style={{ margin: '0 0 8px 0', fontSize: '16px', color: '#202124' }}>No Payroll Generated</h3>
+          <p style={{ margin: 0, fontSize: '13px' }}>Select a date range and click "Generate Payroll" to view employee pay</p>
         </div>
-      )}
-
-      {conflicts && (
-        <DailyMinimumModal
-          conflicts={conflicts}
-          onResolve={handleConflictResolution}
-          onCancel={() => setConflicts(null)}
-        />
       )}
     </div>
   );
@@ -620,104 +494,276 @@ function PayrollReportView({ permissions }) {
 
 function EmployeePayrollCard({ employee }) {
   const [expanded, setExpanded] = useState(false);
+  const [selectedJob, setSelectedJob] = useState(null);
 
   return (
     <div style={{
+      background: 'white',
       border: '1px solid #e0e0e0',
-      borderRadius: '8px',
-      marginBottom: '16px',
+      borderRadius: '4px',
+      marginBottom: '12px',
       overflow: 'hidden'
     }}>
       <div
         onClick={() => setExpanded(!expanded)}
         style={{
-          padding: '16px',
-          background: expanded ? '#f8f9fa' : 'white',
+          padding: '12px 16px',
           cursor: 'pointer',
           display: 'flex',
           justifyContent: 'space-between',
-          alignItems: 'center'
+          alignItems: 'center',
+          background: expanded ? '#f8f9fa' : 'white'
         }}
       >
         <div>
-          <div style={{ fontWeight: '600', fontSize: '16px', color: '#202124', marginBottom: '4px' }}>
+          <div style={{ fontWeight: '600', fontSize: '14px', color: '#202124', marginBottom: '2px' }}>
             {employee.employeeName}
           </div>
-          <div style={{ fontSize: '13px', color: '#5f6368' }}>
-            {employee.totalRegularHours.toFixed(2)} reg hrs • {employee.totalOTHours.toFixed(2)} OT hrs
-            {employee.totalTravelHours > 0 && ` • ${employee.totalTravelHours.toFixed(2)} travel hrs`}
-            {employee.totalStipends > 0 && ` • ${employee.totalStipends} stipends`}
+          <div style={{ fontSize: '11px', color: '#5f6368' }}>
+            Reg: {employee.totalRegularHours.toFixed(1)}h/${employee.totalRegularPay.toFixed(0)} • 
+            OT: {employee.totalOTHours.toFixed(1)}h/${employee.totalOTPay.toFixed(0)}
+            {employee.totalPWRegularHours > 0 && ` • PW: ${employee.totalPWRegularHours.toFixed(1)}h/${employee.totalPWRegularPay.toFixed(0)}`}
+            {employee.totalSignStipends > 0 && ` • Stipends: ${employee.totalSignStipends}`}
           </div>
         </div>
         <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: '20px', fontWeight: '600', color: '#2e7d32' }}>
+          <div style={{ fontSize: '18px', fontWeight: '600', color: '#2e7d32' }}>
             ${employee.grossPay.toFixed(2)}
           </div>
-          <div style={{ fontSize: '12px', color: '#5f6368' }}>
+          <div style={{ fontSize: '10px', color: '#5f6368' }}>
             {expanded ? '▲' : '▼'} {employee.jobs.length} jobs
           </div>
         </div>
       </div>
 
       {expanded && (
-        <div style={{ padding: '16px', background: '#fafafa', borderTop: '1px solid #e0e0e0' }}>
-          <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
+        <div style={{ padding: '10px', background: '#fafafa', borderTop: '1px solid #e0e0e0' }}>
+          <table style={{ width: '100%', fontSize: '11px', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ borderBottom: '2px solid #e0e0e0' }}>
-                <th style={{ padding: '8px', textAlign: 'left' }}>Job ID</th>
-                <th style={{ padding: '8px', textAlign: 'left' }}>Date</th>
-                <th style={{ padding: '8px', textAlign: 'right' }}>Reg Hrs</th>
-                <th style={{ padding: '8px', textAlign: 'right' }}>OT Hrs</th>
-                <th style={{ padding: '8px', textAlign: 'right' }}>Holiday Hrs</th>
-                <th style={{ padding: '8px', textAlign: 'right' }}>Travel Hrs</th>
-                {employee.jobs.some(j => j.isPrevailingWage) && (
-                  <th style={{ padding: '8px', textAlign: 'right' }}>Fringe</th>
-                )}
-                <th style={{ padding: '8px', textAlign: 'right' }}>Stipends</th>
-                <th style={{ padding: '8px', textAlign: 'right' }}>Total</th>
+                <th style={{ padding: '6px', textAlign: 'left' }}>Job ID</th>
+                <th style={{ padding: '6px', textAlign: 'left' }}>Date</th>
+                <th style={{ padding: '6px', textAlign: 'right' }}>Reg</th>
+                <th style={{ padding: '6px', textAlign: 'right' }}>OT</th>
+                <th style={{ padding: '6px', textAlign: 'right' }}>Travel</th>
+                <th style={{ padding: '6px', textAlign: 'right' }}>Mileage</th>
+                <th style={{ padding: '6px', textAlign: 'right' }}>Fringe</th>
+                <th style={{ padding: '6px', textAlign: 'right' }}>Stipends</th>
+                <th style={{ padding: '6px', textAlign: 'right' }}>Total</th>
               </tr>
             </thead>
             <tbody>
               {employee.jobs.map((job, idx) => (
-                <tr key={idx} style={{ 
-                  borderBottom: '1px solid #e0e0e0',
-                  background: job.dailyMinimumApplied && job.isFirstJobOfDay ? '#fff3e0' : 'transparent'
-                }}>
-                  <td style={{ padding: '8px' }}>
+                <tr 
+                  key={idx} 
+                  style={{ 
+                    borderBottom: '1px solid #e0e0e0',
+                    cursor: 'pointer',
+                    background: selectedJob?.jobID === job.jobID ? '#e8f0fe' : 'transparent'
+                  }}
+                  onClick={() => setSelectedJob(selectedJob?.jobID === job.jobID ? null : job)}
+                  onMouseEnter={(e) => e.currentTarget.style.background = '#f8f9fa'}
+                  onMouseLeave={(e) => {
+                    if (selectedJob?.jobID !== job.jobID) {
+                      e.currentTarget.style.background = 'transparent';
+                    }
+                  }}
+                >
+                  <td style={{ padding: '6px' }}>
                     {job.jobID}
-                    {job.dailyMinimumApplied && job.isFirstJobOfDay && (
-                      <span style={{ 
-                        marginLeft: '8px', 
-                        fontSize: '11px', 
-                        color: '#e65100',
-                        fontWeight: '600'
-                      }}>
-                        [Min: {job.dailyTotalHours.toFixed(2)}→{job.adjustedRegularHours.toFixed(2)}hrs]
-                      </span>
-                    )}
+                    {job.isPrevailingWage && <span style={{ color: '#1a73e8', marginLeft: '4px', fontSize: '10px' }}>(PW)</span>}
                   </td>
-                  <td style={{ padding: '8px' }}>{job.date}</td>
-                  <td style={{ padding: '8px', textAlign: 'right' }}>
-                    {job.isFirstJobOfDay ? job.adjustedRegularHours.toFixed(2) : job.regularHours.toFixed(2)}
+                  <td style={{ padding: '6px' }}>{job.date}</td>
+                  <td style={{ padding: '6px', textAlign: 'right' }}>
+                    {job.regularHours.toFixed(1)}h/${job.regularPay.toFixed(0)}
                   </td>
-                  <td style={{ padding: '8px', textAlign: 'right' }}>{job.otHours.toFixed(2)}</td>
-                  <td style={{ padding: '8px', textAlign: 'right' }}>{job.holidayHours.toFixed(2)}</td>
-                  <td style={{ padding: '8px', textAlign: 'right' }}>{job.travelHours.toFixed(2)}</td>
-                  {employee.jobs.some(j => j.isPrevailingWage) && (
-                    <td style={{ padding: '8px', textAlign: 'right' }}>
-                      ${job.fringePay.toFixed(2)}
-                    </td>
-                  )}
-                  <td style={{ padding: '8px', textAlign: 'right' }}>{job.signStipends}</td>
-                  <td style={{ padding: '8px', textAlign: 'right', fontWeight: '600' }}>
-                    {job.isFirstJobOfDay ? `$${job.total.toFixed(2)}` : '(see first job)'}
+                  <td style={{ padding: '6px', textAlign: 'right' }}>
+                    {job.otHours > 0 ? `${job.otHours.toFixed(1)}h/$${job.otPay.toFixed(0)}` : '-'}
+                  </td>
+                  <td style={{ padding: '6px', textAlign: 'right' }}>
+                    {job.travelPay > 0 ? `$${job.travelPay.toFixed(0)}` : '-'}
+                  </td>
+                  <td style={{ padding: '6px', textAlign: 'right' }}>
+                    {job.mileagePay > 0 ? `$${job.mileagePay.toFixed(0)}` : '-'}
+                  </td>
+                  <td style={{ padding: '6px', textAlign: 'right' }}>
+                    {job.fringePay > 0 ? `$${job.fringePay.toFixed(0)}` : '-'}
+                  </td>
+                  <td style={{ padding: '6px', textAlign: 'right' }}>
+                    {job.signStipends > 0 ? job.signStipends : '-'}
+                  </td>
+                  <td style={{ padding: '6px', textAlign: 'right', fontWeight: '600' }}>
+                    ${job.total.toFixed(2)}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
+
+          {/* Detailed Job Breakdown */}
+          {selectedJob && (
+            <JobPayrollBreakdown job={selectedJob} />
+          )}
         </div>
       )}
+    </div>
+  );
+}
+
+function JobPayrollBreakdown({ job }) {
+  // Calculate employee pay rates
+  const employeePayRate = job.employeePayRate || 0;
+  const employeeOTRate = employeePayRate * 1.5;
+  
+  // For PW jobs, get the rates from rate card
+  const pwRate = job.isPrevailingWage ? (parseFloat(job.rateCard.flaggerPay) || 0) : 0;
+  const pwOTRate = pwRate * 1.5;
+  const fringeRate = job.isPrevailingWage ? (parseFloat(job.rateCard.fringeBenefit) || 0) : 0;
+  
+  return (
+    <div style={{
+      marginTop: '10px',
+      padding: '10px',
+      background: 'white',
+      border: '2px solid #1a73e8',
+      borderRadius: '4px'
+    }}>
+      <div style={{
+        fontSize: '12px',
+        fontWeight: '600',
+        color: '#1a73e8',
+        marginBottom: '10px',
+        paddingBottom: '6px',
+        borderBottom: '2px solid #e0e0e0'
+      }}>
+        Pay Breakdown: {job.jobID}
+        {job.hasLunch && (
+          <span style={{ color: '#e65100', marginLeft: '8px', fontSize: '11px', fontWeight: '500' }}>
+            (LUNCH)
+          </span>
+        )}
+      </div>
+
+      {/* Rate Card Info */}
+      <div style={{
+        background: '#f0f4ff',
+        padding: '8px',
+        borderRadius: '4px',
+        marginBottom: '10px',
+        fontSize: '10px'
+      }}>
+        <div style={{ fontWeight: '600', marginBottom: '4px', color: '#1a73e8' }}>
+          Rate: {job.jobData.rateName || job.rateCard.name || job.rateCard.id || 'Unknown'}
+          {job.isPrevailingWage && <span style={{ color: '#d32f2f', marginLeft: '6px' }}>(Prevailing Wage)</span>}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '4px', color: '#5f6368' }}>
+          {job.isPrevailingWage ? (
+            <>
+              <div>Regular: ${pwRate.toFixed(2)}/hr</div>
+              <div>OT: ${pwOTRate.toFixed(2)}/hr</div>
+              <div>Fringe: ${fringeRate.toFixed(2)}/hr</div>
+            </>
+          ) : (
+            <>
+              <div>Regular: ${employeePayRate.toFixed(2)}/hr</div>
+              <div>OT: ${employeeOTRate.toFixed(2)}/hr</div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Pay Components */}
+      <div style={{
+        background: '#fafafa',
+        padding: '8px',
+        borderRadius: '4px',
+        fontSize: '10px'
+      }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px' }}>
+          {job.regularHours > 0 && (
+            <div>
+              <span style={{ color: '#5f6368' }}>Regular:</span>{' '}
+              {job.regularHours.toFixed(2)} hrs × ${(job.regularPay / job.regularHours).toFixed(2)} = ${job.regularPay.toFixed(2)}
+            </div>
+          )}
+          
+          {job.otHours > 0 && (
+            <div>
+              <span style={{ color: '#5f6368' }}>OT:</span>{' '}
+              {job.otHours.toFixed(2)} hrs × ${(job.otPay / job.otHours).toFixed(2)} = ${job.otPay.toFixed(2)}
+            </div>
+          )}
+          
+          {job.holidayHours > 0 && (
+            <div style={{ color: '#d32f2f', fontWeight: '600' }}>
+              <span>Holiday:</span>{' '}
+              {job.holidayHours.toFixed(2)} hrs × ${(job.holidayPay / job.holidayHours).toFixed(2)} = ${job.holidayPay.toFixed(2)}
+            </div>
+          )}
+          
+          {job.travelPay > 0 && (
+            <div>
+              <span style={{ color: '#5f6368' }}>Travel:</span>{' '}
+              {job.travelHours.toFixed(2)} hrs × ${employeePayRate.toFixed(2)} = ${job.travelPay.toFixed(2)}
+            </div>
+          )}
+          
+          {job.travelHours > 0 && job.travelPay === 0 && !job.isPrevailingWage && (
+            <div style={{ color: '#d32f2f', fontSize: '9px' }}>
+              Travel: {job.travelHours.toFixed(2)} hrs (below 1hr threshold - not paid)
+            </div>
+          )}
+          
+          {job.isEPUD && job.travelHours > 0 && (
+            <div style={{ color: '#1a73e8', fontSize: '9px' }}>
+              Travel: {job.travelHours.toFixed(2)} hrs (EPUD - billed to client, not paid to employee)
+            </div>
+          )}
+          
+          {job.mileagePay > 0 && (
+            <div>
+              <span style={{ color: '#5f6368' }}>Mileage:</span>{' '}
+              {job.travelMiles.toFixed(0)} mi × ${(job.mileagePay / job.travelMiles).toFixed(2)} = ${job.mileagePay.toFixed(2)}
+            </div>
+          )}
+          
+          {job.travelMiles > 0 && job.mileagePay === 0 && !job.isPrevailingWage && (
+            <div style={{ color: '#d32f2f', fontSize: '9px' }}>
+              Mileage: {job.travelMiles.toFixed(0)} mi (≤30mi threshold - not paid)
+            </div>
+          )}
+          
+          {job.isEPUD && job.travelMiles > 0 && (
+            <div style={{ color: '#1a73e8', fontSize: '9px' }}>
+              Mileage: {job.travelMiles.toFixed(0)} mi (EPUD - billed to client, not paid to employee)
+            </div>
+          )}
+          
+          {job.fringePay > 0 && (
+            <div>
+              <span style={{ color: '#5f6368' }}>Fringe:</span>{' '}
+              ${job.fringePay.toFixed(2)}
+            </div>
+          )}
+          
+          {job.stipendPay > 0 && (
+            <div>
+              <span style={{ color: '#5f6368' }}>Sign Stipends:</span>{' '}
+              {job.signStipends} × $25 = ${job.stipendPay.toFixed(2)}
+            </div>
+          )}
+          
+          <div style={{ 
+            gridColumn: '1 / -1',
+            paddingTop: '4px',
+            borderTop: '1px solid #e0e0e0',
+            fontWeight: '600',
+            color: '#2e7d32'
+          }}>
+            Total Pay: ${job.total.toFixed(2)}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
