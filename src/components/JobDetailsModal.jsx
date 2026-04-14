@@ -1,11 +1,17 @@
 import { useState } from 'react';
+import { doc, updateDoc } from '../utils/firestoreTracker';
+import { db } from '../firebase';
 import { hasPermission } from '../utils/permissions';
+import { logAudit } from '../utils/auditLog';
 import EditJobModal from './EditJobModal';
 import AssignEmployeesModal from './AssignEmployeesModal';
+import FileAttachments from './FileAttachments';
 
 function JobDetailsModal({ job, permissions, onClose, onUpdate }) {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showAssignModal, setShowAssignModal] = useState(false);
+  const [attachedFiles, setAttachedFiles] = useState(job.attachedFiles || []);
+  const [savingFiles, setSavingFiles] = useState(false);
 
   const canUpdate = hasPermission(permissions, 'jobs', 'update');
 
@@ -26,6 +32,30 @@ function JobDetailsModal({ job, permissions, onClose, onUpdate }) {
   // Get custom parameters
   const customParams = job.custom || {};
   const hasCustomParams = Object.keys(customParams).length > 0;
+
+  const handleFilesChange = async (newFiles) => {
+    setAttachedFiles(newFiles);
+    setSavingFiles(true);
+
+    try {
+      // Update job in Firestore
+      await updateDoc(doc(db, 'jobs', job.id), {
+        attachedFiles: newFiles,
+        updatedAt: new Date()
+      });
+
+      // Log the change
+      await logAudit('UPDATE_JOB_FILES', 'jobs', job.id, {
+        filesCount: newFiles.length
+      });
+
+      setSavingFiles(false);
+    } catch (error) {
+      console.error('Error saving attached files:', error);
+      alert('Failed to save file attachments. Please try again.');
+      setSavingFiles(false);
+    }
+  };
 
   const handleOverlayMouseDown = (e) => {
     if (e.target === e.currentTarget) {
@@ -123,10 +153,27 @@ function JobDetailsModal({ job, permissions, onClose, onUpdate }) {
               </>
             )}
 
+            {/* Google Drive File Attachments */}
+            <FileAttachments 
+              files={attachedFiles}
+              onFilesChange={handleFilesChange}
+              canEdit={canUpdate}
+            />
+            {savingFiles && (
+              <div style={{ 
+                fontSize: '11px', 
+                color: '#1a73e8', 
+                marginTop: '8px',
+                fontStyle: 'italic'
+              }}>
+                💾 Saving...
+              </div>
+            )}
+
             {/* Custom Parameters */}
             {hasCustomParams && (
               <>
-                <h3 style={{ marginBottom: '12px', color: '#1a73e8' }}>Custom Parameters</h3>
+                <h3 style={{ marginBottom: '12px', marginTop: '24px', color: '#1a73e8' }}>Custom Parameters</h3>
                 <div style={{ 
                   background: '#fff3e0', 
                   padding: '16px', 
@@ -149,7 +196,7 @@ function JobDetailsModal({ job, permissions, onClose, onUpdate }) {
             )}
 
             {/* Metadata */}
-            <h3 style={{ marginBottom: '12px', color: '#1a73e8' }}>System Information</h3>
+            <h3 style={{ marginBottom: '12px', marginTop: '24px', color: '#1a73e8' }}>System Information</h3>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '16px' }}>
               <InfoField label="Created At" value={formatDate(job.createdAt)} />
               <InfoField label="Updated At" value={formatDate(job.updatedAt)} />
