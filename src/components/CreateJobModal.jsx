@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { collection, addDoc } from '../utils/firestoreTracker';
 import { db, auth } from '../firebase';
-import { hasPermission } from '../utils/permissions';
 import { logAudit } from '../utils/auditLog';
 import { showConfirmDialog } from './ConfirmationDialog';
 
@@ -55,18 +54,11 @@ function CreateJobModal({ permissions, onClose, onSave }) {
     custom: {},
   });
 
-  const canCreate = hasPermission(permissions, 'jobs', 'create');
-
   const handleChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
   const handleCreate = async () => {
-    if (!canCreate) {
-      alert('You do not have permission to create jobs');
-      return;
-    }
-
     // Validate required fields
     if (!formData.jobID) {
       alert('Job ID is required');
@@ -488,11 +480,9 @@ function CreateJobModal({ permissions, onClose, onSave }) {
           <button onClick={onClose} className="btn btn-secondary">
             Cancel
           </button>
-          {canCreate && (
-            <button onClick={handleCreate} className="btn btn-primary">
-              Create Job
-            </button>
-          )}
+          <button onClick={handleCreate} className="btn btn-primary">
+            Create Job
+          </button>
         </div>
       </div>
     </div>

@@ -1,107 +1,15 @@
 import { useState } from 'react';
 import { doc, updateDoc } from '../utils/firestoreTracker';
 import { db } from '../firebase';
-import { hasPermission } from '../utils/permissions';
 import { logAudit } from '../utils/auditLog';
 import { showConfirmDialog } from './ConfirmationDialog';
-
-// Helper: Convert "MM/DD/YYYY" to "YYYY-MM-DD" for HTML date input
-function formatDateForInput(dateStr) {
-  if (!dateStr) return '';
-  
-  // If already in YYYY-MM-DD format, return as-is
-  if (dateStr.match(/^\d{4}-\d{2}-\d{2}$/)) return dateStr;
-  
-  // Parse MM/DD/YYYY format
-  const parts = dateStr.split('/');
-  if (parts.length === 3) {
-    const [month, day, year] = parts;
-    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-  }
-  
-  return dateStr;
-}
-
-// Helper: Convert "8:00 AM" to "08:00" for HTML time input
-function formatTimeForInput(timeStr) {
-  if (!timeStr) return '';
-  
-  // If already in HH:mm format, return as-is
-  if (timeStr.match(/^\d{2}:\d{2}$/)) return timeStr;
-  
-  // Parse "8:00 AM" format
-  const match = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
-  if (match) {
-    let [, hours, minutes, period] = match;
-    hours = parseInt(hours);
-    
-    if (period.toUpperCase() === 'PM' && hours !== 12) {
-      hours += 12;
-    } else if (period.toUpperCase() === 'AM' && hours === 12) {
-      hours = 0;
-    }
-    
-    return `${String(hours).padStart(2, '0')}:${minutes}`;
-  }
-  
-  return timeStr;
-}
 
 function EditJobModal({ job, permissions, onClose, onSave }) {
   // Store original job for comparison
   const originalJob = { ...job };
 
-  // Initialize form data with ALL job fields
-  const [formData, setFormData] = useState({
-    // Client Information
-    jobID: job.jobID || '',
-    jobSeries: job.jobSeries || '',
-    caller: job.caller || '',
-    billing: job.billing || '',
-    receiver: job.receiver || '',
-    poWoJobNum: job.poWoJobNum || '',
-    
-    // Job Details - with date/time conversion
-    initialJobDate: formatDateForInput(job.initialJobDate) || '',
-    initialJobTime: formatTimeForInput(job.initialJobTime) || '',
-    meetSet: job.meetSet || '',
-    jobLength: job.jobLength || '',
-    location: job.location || '',
-    amountOfFlaggers: job.amountOfFlaggers || '',
-    hideFromSummary: job.hideFromSummary || false,
-    
-    // Flaggers
-    assignedFlaggers: job.assignedFlaggers || '',
-    dispatchedFlaggers: job.dispatchedFlaggers || '',
-    
-    // Equipment - all as TEXT to handle "2 SWC, 4 SWCA" format
-    signSets: job.signSets || '',
-    indvSigns: job.indvSigns || '',
-    cones: job.cones || '',
-    type2: job.type2 || '',
-    type3: job.type3 || '',
-    truck: job.truck || '',
-    balloonLights: job.balloonLights || '',
-    portableLights: job.portableLights || '',
-    
-    // Equipment Carrier
-    equipmentCarrier: job.equipmentCarrier || '',
-    equipmentCarrierSigns: job.equipmentCarrierSigns || '',
-    equipmentCarrierExtraSigns: job.equipmentCarrierExtraSigns || '',
-    equipmentCarrierCones: job.equipmentCarrierCones || '',
-    
-    // Travel & Billing
-    travelTime: job.travelTime || '',
-    travelMiles: job.travelMiles || '',
-    
-    // Notes
-    otherNotes: job.otherNotes || '',
-    
-    // Custom parameters
-    custom: job.custom || {},
-  });
-
-  const canUpdate = hasPermission(permissions, 'jobs', 'update');
+  // Initialize formData with ALL fields from job (automatically includes rateId, attachedFiles, etc.)
+  const [formData, setFormData] = useState({ ...job });
 
   const handleChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -118,11 +26,6 @@ function EditJobModal({ job, permissions, onClose, onSave }) {
   };
 
   const handleSave = async () => {
-    if (!canUpdate) {
-      alert('You do not have permission to update jobs');
-      return;
-    }
-
     // Show confirmation dialog with dynamic comparison
     const confirmed = await showConfirmDialog(originalJob, formData, "Confirm Job Changes");
     
@@ -176,7 +79,7 @@ function EditJobModal({ job, permissions, onClose, onSave }) {
               <label>Job ID *</label>
               <input
                 type="text"
-                value={formData.jobID}
+                value={formData.jobID || ''}
                 onChange={(e) => handleChange('jobID', e.target.value)}
                 required
               />
@@ -186,7 +89,7 @@ function EditJobModal({ job, permissions, onClose, onSave }) {
               <label>Job Series</label>
               <input
                 type="text"
-                value={formData.jobSeries}
+                value={formData.jobSeries || ''}
                 onChange={(e) => handleChange('jobSeries', e.target.value)}
               />
             </div>
@@ -195,7 +98,7 @@ function EditJobModal({ job, permissions, onClose, onSave }) {
               <label>Caller</label>
               <input
                 type="text"
-                value={formData.caller}
+                value={formData.caller || ''}
                 onChange={(e) => handleChange('caller', e.target.value)}
               />
             </div>
@@ -204,7 +107,7 @@ function EditJobModal({ job, permissions, onClose, onSave }) {
               <label>Billing</label>
               <input
                 type="text"
-                value={formData.billing}
+                value={formData.billing || ''}
                 onChange={(e) => handleChange('billing', e.target.value)}
               />
             </div>
@@ -213,7 +116,7 @@ function EditJobModal({ job, permissions, onClose, onSave }) {
               <label>Receiver</label>
               <input
                 type="text"
-                value={formData.receiver}
+                value={formData.receiver || ''}
                 onChange={(e) => handleChange('receiver', e.target.value)}
               />
             </div>
@@ -222,7 +125,7 @@ function EditJobModal({ job, permissions, onClose, onSave }) {
               <label>PO/WO/Job #</label>
               <input
                 type="text"
-                value={formData.poWoJobNum}
+                value={formData.poWoJobNum || ''}
                 onChange={(e) => handleChange('poWoJobNum', e.target.value)}
               />
             </div>
@@ -237,18 +140,20 @@ function EditJobModal({ job, permissions, onClose, onSave }) {
             <div className="form-group">
               <label>Date</label>
               <input
-                type="date"
-                value={formData.initialJobDate}
+                type="text"
+                value={formData.initialJobDate || ''}
                 onChange={(e) => handleChange('initialJobDate', e.target.value)}
+                placeholder="MM/DD/YYYY"
               />
             </div>
 
             <div className="form-group">
               <label>Time</label>
               <input
-                type="time"
-                value={formData.initialJobTime}
+                type="text"
+                value={formData.initialJobTime || ''}
                 onChange={(e) => handleChange('initialJobTime', e.target.value)}
+                placeholder="8:00 AM"
               />
             </div>
 
@@ -256,7 +161,7 @@ function EditJobModal({ job, permissions, onClose, onSave }) {
               <label>Meet/Set</label>
               <input
                 type="text"
-                value={formData.meetSet}
+                value={formData.meetSet || ''}
                 onChange={(e) => handleChange('meetSet', e.target.value)}
               />
             </div>
@@ -265,7 +170,7 @@ function EditJobModal({ job, permissions, onClose, onSave }) {
               <label>Job Length</label>
               <input
                 type="text"
-                value={formData.jobLength}
+                value={formData.jobLength || ''}
                 onChange={(e) => handleChange('jobLength', e.target.value)}
                 placeholder="e.g., 8 hours"
               />
@@ -275,7 +180,7 @@ function EditJobModal({ job, permissions, onClose, onSave }) {
               <label>Location</label>
               <input
                 type="text"
-                value={formData.location}
+                value={formData.location || ''}
                 onChange={(e) => handleChange('location', e.target.value)}
               />
             </div>
@@ -284,7 +189,7 @@ function EditJobModal({ job, permissions, onClose, onSave }) {
               <label>Amount of Flaggers</label>
               <input
                 type="text"
-                value={formData.amountOfFlaggers}
+                value={formData.amountOfFlaggers || ''}
                 onChange={(e) => handleChange('amountOfFlaggers', e.target.value)}
               />
             </div>
@@ -294,7 +199,7 @@ function EditJobModal({ job, permissions, onClose, onSave }) {
             <label>
               <input
                 type="checkbox"
-                checked={formData.hideFromSummary}
+                checked={formData.hideFromSummary || false}
                 onChange={(e) => handleChange('hideFromSummary', e.target.checked)}
                 style={{ marginRight: '8px' }}
               />
@@ -312,7 +217,7 @@ function EditJobModal({ job, permissions, onClose, onSave }) {
               <label>Assigned Flaggers</label>
               <input
                 type="text"
-                value={formData.assignedFlaggers}
+                value={formData.assignedFlaggers || ''}
                 onChange={(e) => handleChange('assignedFlaggers', e.target.value)}
                 placeholder="Comma-separated names"
               />
@@ -322,7 +227,7 @@ function EditJobModal({ job, permissions, onClose, onSave }) {
               <label>Dispatched Flaggers</label>
               <input
                 type="text"
-                value={formData.dispatchedFlaggers}
+                value={formData.dispatchedFlaggers || ''}
                 onChange={(e) => handleChange('dispatchedFlaggers', e.target.value)}
                 placeholder="Comma-separated names"
               />
@@ -339,7 +244,7 @@ function EditJobModal({ job, permissions, onClose, onSave }) {
               <label>Sign Sets</label>
               <input
                 type="text"
-                value={formData.signSets}
+                value={formData.signSets || ''}
                 onChange={(e) => handleChange('signSets', e.target.value)}
               />
             </div>
@@ -348,7 +253,7 @@ function EditJobModal({ job, permissions, onClose, onSave }) {
               <label>Individual Signs</label>
               <input
                 type="text"
-                value={formData.indvSigns}
+                value={formData.indvSigns || ''}
                 onChange={(e) => handleChange('indvSigns', e.target.value)}
               />
             </div>
@@ -357,7 +262,7 @@ function EditJobModal({ job, permissions, onClose, onSave }) {
               <label>Cones</label>
               <input
                 type="text"
-                value={formData.cones}
+                value={formData.cones || ''}
                 onChange={(e) => handleChange('cones', e.target.value)}
               />
             </div>
@@ -366,7 +271,7 @@ function EditJobModal({ job, permissions, onClose, onSave }) {
               <label>Type 2</label>
               <input
                 type="text"
-                value={formData.type2}
+                value={formData.type2 || ''}
                 onChange={(e) => handleChange('type2', e.target.value)}
               />
             </div>
@@ -375,7 +280,7 @@ function EditJobModal({ job, permissions, onClose, onSave }) {
               <label>Type 3</label>
               <input
                 type="text"
-                value={formData.type3}
+                value={formData.type3 || ''}
                 onChange={(e) => handleChange('type3', e.target.value)}
               />
             </div>
@@ -384,7 +289,7 @@ function EditJobModal({ job, permissions, onClose, onSave }) {
               <label>Truck</label>
               <input
                 type="text"
-                value={formData.truck}
+                value={formData.truck || ''}
                 onChange={(e) => handleChange('truck', e.target.value)}
               />
             </div>
@@ -393,7 +298,7 @@ function EditJobModal({ job, permissions, onClose, onSave }) {
               <label>Balloon Lights</label>
               <input
                 type="text"
-                value={formData.balloonLights}
+                value={formData.balloonLights || ''}
                 onChange={(e) => handleChange('balloonLights', e.target.value)}
               />
             </div>
@@ -402,7 +307,7 @@ function EditJobModal({ job, permissions, onClose, onSave }) {
               <label>Portable Lights</label>
               <input
                 type="text"
-                value={formData.portableLights}
+                value={formData.portableLights || ''}
                 onChange={(e) => handleChange('portableLights', e.target.value)}
               />
             </div>
@@ -418,7 +323,7 @@ function EditJobModal({ job, permissions, onClose, onSave }) {
               <label>Equipment Carrier</label>
               <input
                 type="text"
-                value={formData.equipmentCarrier}
+                value={formData.equipmentCarrier || ''}
                 onChange={(e) => handleChange('equipmentCarrier', e.target.value)}
               />
             </div>
@@ -427,7 +332,7 @@ function EditJobModal({ job, permissions, onClose, onSave }) {
               <label>Signs</label>
               <input
                 type="text"
-                value={formData.equipmentCarrierSigns}
+                value={formData.equipmentCarrierSigns || ''}
                 onChange={(e) => handleChange('equipmentCarrierSigns', e.target.value)}
               />
             </div>
@@ -436,7 +341,7 @@ function EditJobModal({ job, permissions, onClose, onSave }) {
               <label>Extra Signs</label>
               <input
                 type="text"
-                value={formData.equipmentCarrierExtraSigns}
+                value={formData.equipmentCarrierExtraSigns || ''}
                 onChange={(e) => handleChange('equipmentCarrierExtraSigns', e.target.value)}
               />
             </div>
@@ -445,7 +350,7 @@ function EditJobModal({ job, permissions, onClose, onSave }) {
               <label>Cones</label>
               <input
                 type="text"
-                value={formData.equipmentCarrierCones}
+                value={formData.equipmentCarrierCones || ''}
                 onChange={(e) => handleChange('equipmentCarrierCones', e.target.value)}
               />
             </div>
@@ -461,7 +366,7 @@ function EditJobModal({ job, permissions, onClose, onSave }) {
               <label>Travel Time (hrs)</label>
               <input
                 type="text"
-                value={formData.travelTime}
+                value={formData.travelTime || ''}
                 onChange={(e) => handleChange('travelTime', e.target.value)}
                 placeholder="e.g., 1.5"
               />
@@ -471,7 +376,7 @@ function EditJobModal({ job, permissions, onClose, onSave }) {
               <label>Travel Miles</label>
               <input
                 type="text"
-                value={formData.travelMiles}
+                value={formData.travelMiles || ''}
                 onChange={(e) => handleChange('travelMiles', e.target.value)}
                 placeholder="e.g., 50"
               />
@@ -486,7 +391,7 @@ function EditJobModal({ job, permissions, onClose, onSave }) {
           <div className="form-group">
             <label>Other Notes</label>
             <textarea
-              value={formData.otherNotes}
+              value={formData.otherNotes || ''}
               onChange={(e) => handleChange('otherNotes', e.target.value)}
               rows="4"
               style={{ width: '100%', resize: 'vertical' }}
@@ -520,11 +425,9 @@ function EditJobModal({ job, permissions, onClose, onSave }) {
           <button onClick={onClose} className="btn btn-secondary">
             Cancel
           </button>
-          {canUpdate && (
-            <button onClick={handleSave} className="btn btn-primary">
-              Save Changes
-            </button>
-          )}
+          <button onClick={handleSave} className="btn btn-primary">
+            Save Changes
+          </button>
         </div>
       </div>
     </div>
