@@ -1,51 +1,51 @@
-import { useState, useEffect } from 'react';
-import { loadGoogleAPIs, openDrivePicker, getGoogleOAuthToken, formatFileSize, getFileIcon } from '../utils/googleDriveUtils';
+import { useState } from 'react';
 
 function FileAttachments({ files = [], onFilesChange, canEdit = true }) {
-  const [loading, setLoading] = useState(false);
-  const [apisLoaded, setApisLoaded] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [fileUrl, setFileUrl] = useState('');
+  const [fileName, setFileName] = useState('');
 
-  useEffect(() => {
-    // Load Google APIs on component mount
-    loadGoogleAPIs().then(() => {
-      setApisLoaded(true);
-    }).catch((error) => {
-      console.error('Failed to load Google APIs:', error);
-    });
-  }, []);
-
-  const handleAttachFile = async () => {
-    if (!apisLoaded) {
-      alert('Google Drive is still loading. Please wait a moment and try again.');
+  const handleAddFile = () => {
+    if (!fileUrl.trim()) {
+      alert('Please enter a file URL');
       return;
     }
 
-    setLoading(true);
+    // Extract file ID from Google Drive URL if it's a Drive link
+    let processedUrl = fileUrl.trim();
+    let extractedName = fileName.trim();
 
-    try {
-      // Get OAuth token
-      const token = await getGoogleOAuthToken();
-
-      // Open picker
-      openDrivePicker(token, (file) => {
-        // Add file to list
-        const newFiles = [...files, {
-          id: file.id,
-          name: file.name,
-          url: file.url,
-          mimeType: file.mimeType,
-          iconUrl: file.iconUrl,
-          sizeBytes: file.sizeBytes,
-          attachedAt: new Date(),
-        }];
-        onFilesChange(newFiles);
-        setLoading(false);
-      });
-    } catch (error) {
-      console.error('Error opening Drive picker:', error);
-      alert('Failed to open Google Drive. Please make sure you\'re signed in to Google and try again.');
-      setLoading(false);
+    // Try to extract Google Drive file ID and create proper link
+    const driveMatch = fileUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
+    if (driveMatch) {
+      const fileId = driveMatch[1];
+      processedUrl = `https://drive.google.com/file/d/${fileId}/view`;
+      
+      // If no name provided, use a default
+      if (!extractedName) {
+        extractedName = 'Google Drive File';
+      }
     }
+
+    // If no name provided, try to extract from URL
+    if (!extractedName) {
+      extractedName = fileUrl.split('/').pop() || 'Attached File';
+    }
+
+    const newFile = {
+      id: Date.now().toString(), // Simple ID
+      name: extractedName,
+      url: processedUrl,
+      attachedAt: new Date(),
+    };
+
+    const newFiles = [...files, newFile];
+    onFilesChange(newFiles);
+
+    // Reset form
+    setFileUrl('');
+    setFileName('');
+    setShowAddModal(false);
   };
 
   const handleRemoveFile = (fileId) => {
@@ -56,6 +56,21 @@ function FileAttachments({ files = [], onFilesChange, canEdit = true }) {
 
   const handleOpenFile = (url) => {
     window.open(url, '_blank');
+  };
+
+  const getFileIcon = (name, url) => {
+    const lowerName = (name || '').toLowerCase();
+    const lowerUrl = (url || '').toLowerCase();
+    
+    if (lowerName.includes('.pdf') || lowerUrl.includes('pdf')) return '📕';
+    if (lowerName.match(/\.(jpg|jpeg|png|gif|webp)/)) return '🖼️';
+    if (lowerName.match(/\.(mp4|mov|avi|wmv)/)) return '🎥';
+    if (lowerName.match(/\.(xlsx?|csv)/)) return '📊';
+    if (lowerName.match(/\.(docx?|txt)/)) return '📝';
+    if (lowerName.match(/\.(pptx?)/)) return '📽️';
+    if (lowerName.match(/\.(zip|rar|7z)/)) return '📦';
+    if (lowerUrl.includes('drive.google.com')) return '📁';
+    return '📄';
   };
 
   return (
@@ -98,7 +113,7 @@ function FileAttachments({ files = [], onFilesChange, canEdit = true }) {
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1 }}>
                 <span style={{ fontSize: '20px' }}>
-                  {getFileIcon(file.mimeType)}
+                  {getFileIcon(file.name, file.url)}
                 </span>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ 
@@ -112,8 +127,7 @@ function FileAttachments({ files = [], onFilesChange, canEdit = true }) {
                     {file.name}
                   </div>
                   <div style={{ fontSize: '11px', color: '#5f6368', marginTop: '2px' }}>
-                    {formatFileSize(file.sizeBytes)}
-                    {file.attachedAt && ` • Added ${new Date(file.attachedAt).toLocaleDateString()}`}
+                    {file.attachedAt && `Added ${new Date(file.attachedAt).toLocaleDateString()}`}
                   </div>
                 </div>
               </div>
@@ -151,49 +165,90 @@ function FileAttachments({ files = [], onFilesChange, canEdit = true }) {
       )}
 
       {canEdit && (
-        <button
-          onClick={handleAttachFile}
-          disabled={loading || !apisLoaded}
-          className="btn btn-secondary"
-          style={{
-            marginTop: '12px',
-            fontSize: '12px',
-            padding: '8px 16px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px'
-          }}
-        >
-          {loading ? (
-            <>
-              <span style={{ 
-                display: 'inline-block',
-                width: '12px',
-                height: '12px',
-                border: '2px solid #fff',
-                borderTop: '2px solid transparent',
-                borderRadius: '50%',
-                animation: 'spin 0.6s linear infinite'
-              }}></span>
-              Loading...
-            </>
-          ) : !apisLoaded ? (
-            '⏳ Loading Google Drive...'
-          ) : (
-            <>
-              <span>📎</span>
-              Attach File from Google Drive
-            </>
-          )}
-        </button>
-      )}
+        <>
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="btn btn-secondary"
+            style={{
+              marginTop: '12px',
+              fontSize: '12px',
+              padding: '8px 16px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+          >
+            <span>📎</span>
+            Attach File Link
+          </button>
 
-      <style>{`
-        @keyframes spin {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-      `}</style>
+          {showAddModal && (
+            <div className="modal-overlay" onClick={() => setShowAddModal(false)}>
+              <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
+                <div className="modal-header">
+                  <h2>Attach File Link</h2>
+                  <button className="modal-close" onClick={() => setShowAddModal(false)}>×</button>
+                </div>
+
+                <div className="modal-content">
+                  <div style={{ 
+                    background: '#e8f0fe', 
+                    padding: '12px', 
+                    borderRadius: '4px',
+                    marginBottom: '16px',
+                    fontSize: '12px'
+                  }}>
+                    💡 <strong>How to attach a file:</strong>
+                    <ol style={{ marginTop: '8px', marginLeft: '20px', lineHeight: '1.6' }}>
+                      <li>Open the file in Google Drive</li>
+                      <li>Click "Share" button</li>
+                      <li>Change to "Anyone with the link"</li>
+                      <li>Copy the link</li>
+                      <li>Paste it below</li>
+                    </ol>
+                  </div>
+
+                  <div className="form-group">
+                    <label>File Name</label>
+                    <input
+                      type="text"
+                      value={fileName}
+                      onChange={(e) => setFileName(e.target.value)}
+                      placeholder="e.g., TCP Main Street Plan"
+                    />
+                    <div style={{ fontSize: '11px', color: '#5f6368', marginTop: '4px' }}>
+                      Optional - helps identify the file
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label>File URL *</label>
+                    <input
+                      type="url"
+                      value={fileUrl}
+                      onChange={(e) => setFileUrl(e.target.value)}
+                      placeholder="https://drive.google.com/file/d/..."
+                      required
+                    />
+                    <div style={{ fontSize: '11px', color: '#5f6368', marginTop: '4px' }}>
+                      Google Drive link or any file URL
+                    </div>
+                  </div>
+                </div>
+
+                <div className="modal-actions">
+                  <button onClick={() => setShowAddModal(false)} className="btn btn-secondary">
+                    Cancel
+                  </button>
+                  <button onClick={handleAddFile} className="btn btn-primary">
+                    Attach File
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
