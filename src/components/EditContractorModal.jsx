@@ -1,328 +1,133 @@
 import { useState } from 'react';
-import { doc, updateDoc, serverTimestamp } from '../utils/firestoreTracker';
-import { db, auth } from '../firebase';
+import { doc, updateDoc } from '../utils/firestoreTracker';
+import { db } from '../firebase';
 import { logAudit } from '../utils/auditLog';
+import { showConfirmDialog } from './ConfirmationDialog';
 
 function EditContractorModal({ contractor, onClose, onSave }) {
-  const [formData, setFormData] = useState({
-    // Standard fields
-    caller: contractor.caller || '',
-    contractor: contractor.contractor || '',
-    billing: contractor.billing || '',
-    phone: contractor.phone || '',
-    email: contractor.email || '',
-    rates: contractor.rates || '',
-    notes: contractor.notes || ''
-  });
+  // Store original for comparison
+  const originalContractor = { ...contractor };
 
-  // Custom parameters
-  const [customParams, setCustomParams] = useState(
-    Object.entries(contractor.custom || {}).map(([key, value]) => ({
-      key,
-      value: String(value),
-      type: typeof value
-    }))
-  );
+  // ✅ CRITICAL: Use spread operator to copy ALL fields (including unknown ones)
+  const [formData, setFormData] = useState({ ...contractor });
 
-  // New parameter being added
-  const [newParam, setNewParam] = useState({ key: '', value: '', type: 'string' });
-
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+  const handleChange = (field, value) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleCustomParamChange = (index, field, value) => {
-    const updated = [...customParams];
-    updated[index][field] = value;
-    setCustomParams(updated);
-  };
-
-  const removeCustomParam = (index) => {
-    setCustomParams(customParams.filter((_, i) => i !== index));
-  };
-
-  const addNewParam = () => {
-    if (!newParam.key.trim()) {
-      alert('Parameter name is required');
-      return;
+  const handleSave = async () => {
+    // Show confirmation dialog with ALL changes
+    const confirmed = await showConfirmDialog(originalContractor, formData, "Confirm Contractor Changes");
+    
+    if (!confirmed) {
+      return; // User cancelled or no changes
     }
 
-    // Convert value to correct type
-    let convertedValue = newParam.value;
-    if (newParam.type === 'number') {
-      convertedValue = parseFloat(newParam.value) || 0;
-    } else if (newParam.type === 'boolean') {
-      convertedValue = newParam.value === 'true';
-    }
-
-    setCustomParams([
-      ...customParams,
-      {
-        key: newParam.key.trim(),
-        value: convertedValue,
-        type: newParam.type
-      }
-    ]);
-
-    setNewParam({ key: '', value: '', type: 'string' });
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
-
+    // Save to Firestore
     try {
-      // Build custom parameters object
-      const customObj = {};
-      customParams.forEach(param => {
-        let value = param.value;
-        if (param.type === 'number') {
-          value = parseFloat(value) || 0;
-        } else if (param.type === 'boolean') {
-          value = value === 'true' || value === true;
-        }
-        customObj[param.key] = value;
+      await updateDoc(doc(db, 'contractors', contractor.id), {
+        ...formData,
+        updatedAt: new Date()
       });
 
-      const updates = {
-        caller: formData.caller.trim(),
-        contractor: formData.contractor.trim(),
-        billing: formData.billing.trim(),
-        phone: formData.phone.trim(),
-        email: formData.email.trim(),
-        rates: formData.rates.trim(),
-        notes: formData.notes.trim(),
-        custom: customObj,
-        updatedAt: serverTimestamp(),
-        updatedBy: auth.currentUser?.email || 'unknown'
-      };
+      await logAudit('UPDATE_CONTRACTOR', 'contractors', contractor.id, {
+        companyName: formData.companyName
+      });
 
-      await updateDoc(doc(db, 'contractors', contractor.id), updates);
-      await logAudit('UPDATE_CONTRACTOR', 'contractors', contractor.id, updates);
-
+      alert('Contractor updated successfully!');
       onSave();
-      onClose();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleOverlayMouseDown = (e) => {
-    if (e.target === e.currentTarget) {
-      onClose();
+    } catch (error) {
+      console.error('Error updating contractor:', error);
+      alert('Failed to update contractor. Please try again.');
     }
   };
 
   return (
-    <div className="modal-overlay" onMouseDown={handleOverlayMouseDown}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '700px' }}>
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '600px' }}>
         <div className="modal-header">
-          <h2>Edit Contractor: {contractor.caller}</h2>
+          <h2>Edit Contractor: {contractor.companyName}</h2>
           <button className="modal-close" onClick={onClose}>×</button>
         </div>
 
-        <form onSubmit={handleSubmit}>
-          <div className="modal-content" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
-            {error && <div className="error-message">{error}</div>}
+        <div className="modal-content" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+          
+          <h3 style={{ fontSize: '14px', fontWeight: '600', marginBottom: '12px', color: '#1a73e8' }}>
+            Contractor Information
+          </h3>
 
-            {/* Contact Information */}
-            <h3 style={{ marginBottom: '12px', color: '#1a73e8' }}>Contact Information</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px', marginBottom: '24px' }}>
-              <div className="form-group">
-                <label>Caller Name *</label>
-                <input
-                  name="caller"
-                  value={formData.caller}
-                  onChange={handleChange}
-                  required
-                />
-              </div>
+          <div className="form-group">
+            <label>Company Name *</label>
+            <input
+              type="text"
+              value={formData.companyName || ''}
+              onChange={(e) => handleChange('companyName', e.target.value)}
+              required
+            />
+          </div>
 
-              <div className="form-group">
-                <label>Company Name</label>
-                <input
-                  name="contractor"
-                  value={formData.contractor}
-                  onChange={handleChange}
-                />
-              </div>
+          <div className="form-group">
+            <label>Contact Name</label>
+            <input
+              type="text"
+              value={formData.contactName || ''}
+              onChange={(e) => handleChange('contactName', e.target.value)}
+            />
+          </div>
 
-              <div className="form-group">
-                <label>Billing Name</label>
-                <input
-                  name="billing"
-                  value={formData.billing}
-                  onChange={handleChange}
-                />
-              </div>
-
-              <div className="form-group">
-                <label>Phone</label>
-                <input
-                  name="phone"
-                  value={formData.phone}
-                  onChange={handleChange}
-                />
-              </div>
-
-              <div className="form-group">
-                <label>Email</label>
-                <input
-                  type="email"
-                  name="email"
-                  value={formData.email}
-                  onChange={handleChange}
-                />
-              </div>
-            </div>
-
-            {/* Billing Information */}
-            <h3 style={{ marginBottom: '12px', color: '#1a73e8' }}>Billing Information</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '16px', marginBottom: '24px' }}>
-              <div className="form-group">
-                <label>Rate Card</label>
-                <input
-                  name="rates"
-                  value={formData.rates}
-                  onChange={handleChange}
-                />
-              </div>
-            </div>
-
-            {/* Notes */}
-            <h3 style={{ marginBottom: '12px', color: '#1a73e8' }}>Notes</h3>
-            <div className="form-group" style={{ marginBottom: '24px' }}>
-              <textarea
-                name="notes"
-                value={formData.notes}
-                onChange={handleChange}
-                rows="3"
-                style={{ width: '100%', padding: '8px', borderRadius: '4px', border: '1px solid #dadce0' }}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+            <div className="form-group">
+              <label>Phone</label>
+              <input
+                type="text"
+                value={formData.phone || ''}
+                onChange={(e) => handleChange('phone', e.target.value)}
+                placeholder="(555) 555-5555"
               />
             </div>
 
-            {/* Custom Parameters */}
-            <h3 style={{ marginBottom: '12px', color: '#1a73e8' }}>Custom Parameters</h3>
-            
-            {/* Existing custom parameters */}
-            {customParams.map((param, index) => (
-              <div key={index} style={{ display: 'flex', gap: '8px', marginBottom: '8px', alignItems: 'center' }}>
-                <input
-                  value={param.key}
-                  onChange={(e) => handleCustomParamChange(index, 'key', e.target.value)}
-                  placeholder="Parameter name"
-                  style={{ flex: '1', padding: '8px', borderRadius: '4px', border: '1px solid #dadce0' }}
-                />
-                <select
-                  value={param.type}
-                  onChange={(e) => handleCustomParamChange(index, 'type', e.target.value)}
-                  style={{ padding: '8px', borderRadius: '4px', border: '1px solid #dadce0' }}
-                >
-                  <option value="string">Text</option>
-                  <option value="number">Number</option>
-                  <option value="boolean">True/False</option>
-                </select>
-                {param.type === 'boolean' ? (
-                  <select
-                    value={String(param.value)}
-                    onChange={(e) => handleCustomParamChange(index, 'value', e.target.value)}
-                    style={{ flex: '2', padding: '8px', borderRadius: '4px', border: '1px solid #dadce0' }}
-                  >
-                    <option value="true">True</option>
-                    <option value="false">False</option>
-                  </select>
-                ) : (
-                  <input
-                    type={param.type === 'number' ? 'number' : 'text'}
-                    value={param.value}
-                    onChange={(e) => handleCustomParamChange(index, 'value', e.target.value)}
-                    placeholder="Value"
-                    style={{ flex: '2', padding: '8px', borderRadius: '4px', border: '1px solid #dadce0' }}
-                  />
-                )}
-                <button
-                  type="button"
-                  onClick={() => removeCustomParam(index)}
-                  className="btn btn-secondary btn-small"
-                  style={{ color: '#d32f2f' }}
-                >
-                  Remove
-                </button>
-              </div>
-            ))}
-
-            {/* Add new parameter */}
-            <div style={{ 
-              marginTop: '16px', 
-              padding: '16px', 
-              background: '#f8f9fa', 
-              borderRadius: '4px',
-              border: '2px dashed #dadce0'
-            }}>
-              <div style={{ fontWeight: '600', marginBottom: '12px', fontSize: '14px' }}>
-                Add New Parameter
-              </div>
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                <input
-                  value={newParam.key}
-                  onChange={(e) => setNewParam({ ...newParam, key: e.target.value })}
-                  placeholder="Parameter name"
-                  style={{ flex: '1', padding: '8px', borderRadius: '4px', border: '1px solid #dadce0' }}
-                />
-                <select
-                  value={newParam.type}
-                  onChange={(e) => setNewParam({ ...newParam, type: e.target.value })}
-                  style={{ padding: '8px', borderRadius: '4px', border: '1px solid #dadce0' }}
-                >
-                  <option value="string">Text</option>
-                  <option value="number">Number</option>
-                  <option value="boolean">True/False</option>
-                </select>
-                {newParam.type === 'boolean' ? (
-                  <select
-                    value={newParam.value}
-                    onChange={(e) => setNewParam({ ...newParam, value: e.target.value })}
-                    style={{ flex: '2', padding: '8px', borderRadius: '4px', border: '1px solid #dadce0' }}
-                  >
-                    <option value="true">True</option>
-                    <option value="false">False</option>
-                  </select>
-                ) : (
-                  <input
-                    type={newParam.type === 'number' ? 'number' : 'text'}
-                    value={newParam.value}
-                    onChange={(e) => setNewParam({ ...newParam, value: e.target.value })}
-                    placeholder="Value"
-                    style={{ flex: '2', padding: '8px', borderRadius: '4px', border: '1px solid #dadce0' }}
-                  />
-                )}
-                <button
-                  type="button"
-                  onClick={addNewParam}
-                  className="btn btn-primary btn-small"
-                >
-                  Add
-                </button>
-              </div>
+            <div className="form-group">
+              <label>Email</label>
+              <input
+                type="email"
+                value={formData.email || ''}
+                onChange={(e) => handleChange('email', e.target.value)}
+              />
             </div>
           </div>
 
-          <div className="modal-actions">
-            <button type="button" onClick={onClose} className="btn btn-secondary">
-              Cancel
-            </button>
-            <button type="submit" className="btn btn-primary" disabled={loading}>
-              {loading ? 'Saving...' : 'Save Changes'}
-            </button>
+          <div className="form-group">
+            <label>
+              <input
+                type="checkbox"
+                checked={formData.isActive || false}
+                onChange={(e) => handleChange('isActive', e.target.checked)}
+                style={{ marginRight: '8px' }}
+              />
+              Active
+            </label>
           </div>
-        </form>
+
+          <div className="form-group">
+            <label>Notes</label>
+            <textarea
+              value={formData.notes || ''}
+              onChange={(e) => handleChange('notes', e.target.value)}
+              rows="3"
+              style={{ width: '100%', resize: 'vertical' }}
+            />
+          </div>
+
+        </div>
+
+        <div className="modal-actions">
+          <button onClick={onClose} className="btn btn-secondary">
+            Cancel
+          </button>
+          <button onClick={handleSave} className="btn btn-primary">
+            Save Changes
+          </button>
+        </div>
       </div>
     </div>
   );
