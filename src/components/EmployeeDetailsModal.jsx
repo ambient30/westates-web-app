@@ -1,14 +1,15 @@
 import { useState } from 'react';
+import FileAttachments from './FileAttachments';
 
 function EmployeeDetailsModal({ employee, onClose }) {
   // ✅ DYNAMIC FIELD DETECTION - Get ALL fields from the actual object
   const getFieldsToDisplay = () => {
     const fields = [];
     
-    // Get ALL keys from the object (except internal ones)
+    // Get ALL keys from the object (except internal ones and attachedFiles)
     Object.keys(employee).forEach(key => {
-      // Skip Firebase metadata fields
-      if (key === 'id') {
+      // Skip Firebase metadata fields and attachedFiles (shown separately)
+      if (key === 'id' || key === 'attachedFiles') {
         return;
       }
 
@@ -148,11 +149,19 @@ function EmployeeDetailsModal({ employee, onClose }) {
             ))}
           </div>
 
+          {/* File Attachments Section (Read-Only) */}
+          <FileAttachments
+            files={employee.attachedFiles || []}
+            onFilesChange={() => {}} // No-op for read-only
+            readOnly={true}
+          />
+
           {/* Debug info */}
           <div style={{ marginTop: '20px', padding: '10px', background: '#f5f5f5', borderRadius: '4px' }}>
             <p style={{ fontSize: '11px', color: '#666', margin: 0 }}>
               <strong>Total fields:</strong> {fields.length} | 
-              <strong> Employee ID:</strong> {employee.id}
+              <strong> Employee ID:</strong> {employee.id} |
+              <strong> Files:</strong> {(employee.attachedFiles || []).length}
             </p>
           </div>
 

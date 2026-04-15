@@ -3,6 +3,7 @@ import { doc, updateDoc } from '../utils/firestoreTracker';
 import { db } from '../firebase';
 import { logAudit } from '../utils/auditLog';
 import { showConfirmDialog } from './ConfirmationDialog';
+import FileAttachments from './FileAttachments';
 
 function EditEmployeeModal({ employee, onClose, onSave }) {
   // Store original for comparison
@@ -13,6 +14,10 @@ function EditEmployeeModal({ employee, onClose, onSave }) {
 
   const handleChange = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handleFilesChange = (newFiles) => {
+    setFormData(prev => ({ ...prev, attachedFiles: newFiles }));
   };
 
   const handleSave = async () => {
@@ -45,11 +50,11 @@ function EditEmployeeModal({ employee, onClose, onSave }) {
   const getFieldsToDisplay = () => {
     const fields = [];
     
-    // Get ALL keys from the object (except internal Firebase ones)
+    // Get ALL keys from the object (except internal Firebase ones and attachedFiles)
     Object.keys(formData).forEach(key => {
-      // Skip Firebase metadata fields
+      // Skip Firebase metadata fields and attachedFiles (shown separately)
       if (key === 'id' || key === 'createdAt' || key === 'updatedAt' || 
-          key === 'createdBy' || key === 'updatedBy') {
+          key === 'createdBy' || key === 'updatedBy' || key === 'attachedFiles') {
         return;
       }
 
@@ -74,9 +79,9 @@ function EditEmployeeModal({ employee, onClose, onSave }) {
   // Generate a readable label from field name
   const generateLabel = (fieldName) => {
     return fieldName
-      .replace(/([A-Z])/g, ' $1') // camelCase to spaces
-      .replace(/^./, str => str.toUpperCase()) // Capitalize first letter
-      .replace(/_/g, ' '); // underscores to spaces
+      .replace(/([A-Z])/g, ' $1')
+      .replace(/^./, str => str.toUpperCase())
+      .replace(/_/g, ' ');
   };
 
   return (
@@ -124,7 +129,6 @@ function EditEmployeeModal({ employee, onClose, onSave }) {
                           const parsed = JSON.parse(e.target.value);
                           handleChange(field.key, parsed);
                         } catch (err) {
-                          // Invalid JSON, just update the raw value
                           handleChange(field.key, e.target.value);
                         }
                       }}
@@ -147,7 +151,6 @@ function EditEmployeeModal({ employee, onClose, onSave }) {
                           const parsed = JSON.parse(e.target.value);
                           handleChange(field.key, parsed);
                         } catch (err) {
-                          // Invalid JSON, just update the raw value
                           handleChange(field.key, e.target.value);
                         }
                       }}
@@ -172,11 +175,19 @@ function EditEmployeeModal({ employee, onClose, onSave }) {
             })}
           </div>
 
+          {/* File Attachments Section */}
+          <FileAttachments
+            files={formData.attachedFiles || []}
+            onFilesChange={handleFilesChange}
+            readOnly={false}
+          />
+
           {/* Debug info */}
           <div style={{ marginTop: '20px', padding: '10px', background: '#f5f5f5', borderRadius: '4px' }}>
             <p style={{ fontSize: '11px', color: '#666', margin: 0 }}>
               <strong>Total fields:</strong> {fields.length} | 
-              <strong> Object ID:</strong> {employee.id}
+              <strong> Employee ID:</strong> {employee.id} |
+              <strong> Files:</strong> {(formData.attachedFiles || []).length}
             </p>
           </div>
 
