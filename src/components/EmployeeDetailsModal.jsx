@@ -1,18 +1,18 @@
 import { useState } from 'react';
 
-function JobDetailsModal({ job, onClose }) {
+function EmployeeDetailsModal({ employee, onClose }) {
   // ✅ DYNAMIC FIELD DETECTION - Get ALL fields from the actual object
   const getFieldsToDisplay = () => {
     const fields = [];
     
     // Get ALL keys from the object (except internal ones)
-    Object.keys(job).forEach(key => {
+    Object.keys(employee).forEach(key => {
       // Skip Firebase metadata fields
       if (key === 'id') {
         return;
       }
 
-      const value = job[key];
+      const value = employee[key];
       const fieldType = typeof value;
 
       fields.push({
@@ -34,9 +34,9 @@ function JobDetailsModal({ job, onClose }) {
   // Generate a readable label from field name
   const generateLabel = (fieldName) => {
     return fieldName
-      .replace(/([A-Z])/g, ' $1') // camelCase to spaces
-      .replace(/^./, str => str.toUpperCase()) // Capitalize first letter
-      .replace(/_/g, ' '); // underscores to spaces
+      .replace(/([A-Z])/g, ' $1')
+      .replace(/^./, str => str.toUpperCase())
+      .replace(/_/g, ' ');
   };
 
   // Format date/time values
@@ -103,14 +103,14 @@ function JobDetailsModal({ job, onClose }) {
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '800px' }}>
         <div className="modal-header">
-          <h2>Job Details: {job.jobID || job.id}</h2>
+          <h2>Employee Details: {employee.fullName || employee.name || employee.id}</h2>
           <button className="modal-close" onClick={onClose}>×</button>
         </div>
 
         <div className="modal-content" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
           
           <h3 style={{ fontSize: '14px', fontWeight: '600', marginBottom: '12px', color: '#1a73e8' }}>
-            Job Information ({fields.length} fields)
+            Employee Information ({fields.length} fields)
           </h3>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -152,7 +152,7 @@ function JobDetailsModal({ job, onClose }) {
           <div style={{ marginTop: '20px', padding: '10px', background: '#f5f5f5', borderRadius: '4px' }}>
             <p style={{ fontSize: '11px', color: '#666', margin: 0 }}>
               <strong>Total fields:</strong> {fields.length} | 
-              <strong> Job ID:</strong> {job.id}
+              <strong> Employee ID:</strong> {employee.id}
             </p>
           </div>
 
@@ -168,4 +168,4 @@ function JobDetailsModal({ job, onClose }) {
   );
 }
 
-export default JobDetailsModal;
+export default EmployeeDetailsModal;

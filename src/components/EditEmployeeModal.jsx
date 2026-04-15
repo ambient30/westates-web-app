@@ -8,7 +8,7 @@ function EditEmployeeModal({ employee, onClose, onSave }) {
   // Store original for comparison
   const originalEmployee = { ...employee };
 
-  // ✅ CRITICAL: Use spread operator to copy ALL fields (including unknown ones)
+  // ✅ CRITICAL: Copy ALL fields using spread operator
   const [formData, setFormData] = useState({ ...employee });
 
   const handleChange = (field, value) => {
@@ -16,14 +16,13 @@ function EditEmployeeModal({ employee, onClose, onSave }) {
   };
 
   const handleSave = async () => {
-    // Show confirmation dialog with ALL changes
+    // Show confirmation with ALL changes
     const confirmed = await showConfirmDialog(originalEmployee, formData, "Confirm Employee Changes");
     
     if (!confirmed) {
-      return; // User cancelled or no changes
+      return;
     }
 
-    // Save to Firestore
     try {
       await updateDoc(doc(db, 'employees', employee.id), {
         ...formData,
@@ -31,7 +30,7 @@ function EditEmployeeModal({ employee, onClose, onSave }) {
       });
 
       await logAudit('UPDATE_EMPLOYEE', 'employees', employee.id, {
-        fullName: formData.fullName
+        fullName: formData.fullName || formData.name || 'Unknown'
       });
 
       alert('Employee updated successfully!');
@@ -42,93 +41,143 @@ function EditEmployeeModal({ employee, onClose, onSave }) {
     }
   };
 
+  // ✅ DYNAMIC FIELD DETECTION - Get ALL fields from the actual object
+  const getFieldsToDisplay = () => {
+    const fields = [];
+    
+    // Get ALL keys from the object (except internal Firebase ones)
+    Object.keys(formData).forEach(key => {
+      // Skip Firebase metadata fields
+      if (key === 'id' || key === 'createdAt' || key === 'updatedAt' || 
+          key === 'createdBy' || key === 'updatedBy') {
+        return;
+      }
+
+      const value = formData[key];
+      const fieldType = typeof value;
+
+      fields.push({
+        key,
+        value,
+        type: fieldType,
+        isBoolean: fieldType === 'boolean',
+        isObject: fieldType === 'object' && value !== null && !Array.isArray(value),
+        isArray: Array.isArray(value),
+      });
+    });
+
+    return fields;
+  };
+
+  const fields = getFieldsToDisplay();
+
+  // Generate a readable label from field name
+  const generateLabel = (fieldName) => {
+    return fieldName
+      .replace(/([A-Z])/g, ' $1') // camelCase to spaces
+      .replace(/^./, str => str.toUpperCase()) // Capitalize first letter
+      .replace(/_/g, ' '); // underscores to spaces
+  };
+
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '600px' }}>
+      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '800px' }}>
         <div className="modal-header">
-          <h2>Edit Employee: {employee.fullName}</h2>
+          <h2>Edit Employee: {formData.fullName || formData.name || employee.id}</h2>
           <button className="modal-close" onClick={onClose}>×</button>
         </div>
 
         <div className="modal-content" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
           
           <h3 style={{ fontSize: '14px', fontWeight: '600', marginBottom: '12px', color: '#1a73e8' }}>
-            Employee Information
+            Employee Information ({fields.length} fields)
           </h3>
 
-          <div className="form-group">
-            <label>Full Name *</label>
-            <input
-              type="text"
-              value={formData.fullName || ''}
-              onChange={(e) => handleChange('fullName', e.target.value)}
-              required
-            />
-          </div>
-
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
-            <div className="form-group">
-              <label>Phone</label>
-              <input
-                type="text"
-                value={formData.phone || ''}
-                onChange={(e) => handleChange('phone', e.target.value)}
-                placeholder="(555) 555-5555"
-              />
-            </div>
+            {fields.map(field => {
+              // Boolean field (checkbox)
+              if (field.isBoolean) {
+                return (
+                  <div key={field.key} className="form-group">
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={formData[field.key] || false}
+                        onChange={(e) => handleChange(field.key, e.target.checked)}
+                        style={{ marginRight: '8px' }}
+                      />
+                      {generateLabel(field.key)}
+                    </label>
+                  </div>
+                );
+              }
 
-            <div className="form-group">
-              <label>Phone 2</label>
-              <input
-                type="text"
-                value={formData.phone2 || ''}
-                onChange={(e) => handleChange('phone2', e.target.value)}
-                placeholder="(555) 555-5555"
-              />
-            </div>
+              // Object field (JSON textarea)
+              if (field.isObject) {
+                return (
+                  <div key={field.key} className="form-group" style={{ gridColumn: '1 / -1' }}>
+                    <label>{generateLabel(field.key)} (Object)</label>
+                    <textarea
+                      value={JSON.stringify(formData[field.key], null, 2)}
+                      onChange={(e) => {
+                        try {
+                          const parsed = JSON.parse(e.target.value);
+                          handleChange(field.key, parsed);
+                        } catch (err) {
+                          // Invalid JSON, just update the raw value
+                          handleChange(field.key, e.target.value);
+                        }
+                      }}
+                      rows="4"
+                      style={{ width: '100%', resize: 'vertical', fontFamily: 'monospace', fontSize: '11px' }}
+                    />
+                  </div>
+                );
+              }
+
+              // Array field (JSON textarea)
+              if (field.isArray) {
+                return (
+                  <div key={field.key} className="form-group" style={{ gridColumn: '1 / -1' }}>
+                    <label>{generateLabel(field.key)} (Array)</label>
+                    <textarea
+                      value={JSON.stringify(formData[field.key], null, 2)}
+                      onChange={(e) => {
+                        try {
+                          const parsed = JSON.parse(e.target.value);
+                          handleChange(field.key, parsed);
+                        } catch (err) {
+                          // Invalid JSON, just update the raw value
+                          handleChange(field.key, e.target.value);
+                        }
+                      }}
+                      rows="3"
+                      style={{ width: '100%', resize: 'vertical', fontFamily: 'monospace', fontSize: '11px' }}
+                    />
+                  </div>
+                );
+              }
+
+              // String/Number field (text input)
+              return (
+                <div key={field.key} className="form-group">
+                  <label>{generateLabel(field.key)}</label>
+                  <input
+                    type="text"
+                    value={formData[field.key] || ''}
+                    onChange={(e) => handleChange(field.key, e.target.value)}
+                  />
+                </div>
+              );
+            })}
           </div>
 
-          <div className="form-group">
-            <label>Email</label>
-            <input
-              type="email"
-              value={formData.email || ''}
-              onChange={(e) => handleChange('email', e.target.value)}
-            />
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
-            <div className="form-group">
-              <label>Pay Rate</label>
-              <input
-                type="text"
-                value={formData.payRate || ''}
-                onChange={(e) => handleChange('payRate', e.target.value)}
-                placeholder="e.g., 25.00"
-              />
-            </div>
-
-            <div className="form-group">
-              <label>
-                <input
-                  type="checkbox"
-                  checked={formData.isActive || false}
-                  onChange={(e) => handleChange('isActive', e.target.checked)}
-                  style={{ marginRight: '8px' }}
-                />
-                Active
-              </label>
-            </div>
-          </div>
-
-          <div className="form-group">
-            <label>Notes</label>
-            <textarea
-              value={formData.notes || ''}
-              onChange={(e) => handleChange('notes', e.target.value)}
-              rows="3"
-              style={{ width: '100%', resize: 'vertical' }}
-            />
+          {/* Debug info */}
+          <div style={{ marginTop: '20px', padding: '10px', background: '#f5f5f5', borderRadius: '4px' }}>
+            <p style={{ fontSize: '11px', color: '#666', margin: 0 }}>
+              <strong>Total fields:</strong> {fields.length} | 
+              <strong> Object ID:</strong> {employee.id}
+            </p>
           </div>
 
         </div>
