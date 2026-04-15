@@ -1,300 +1,586 @@
 import { useState, useEffect } from 'react';
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc } from '../utils/firestoreTracker';
-import { db, auth } from '../firebase';
-import { hasPermission, defaultPermissions } from '../utils/permissions';
-import { logAudit } from '../utils/auditLog';
+import { collection, onSnapshot, doc, setDoc, updateDoc, deleteDoc } from '../utils/firestoreTracker';
+import { db } from '../firebase';
 
-function RoleManager({ permissions }) {
+// Available tabs/features for permission management
+const AVAILABLE_PERMISSIONS = [
+  { id: 'jobs', name: 'Jobs', description: 'View and manage jobs' },
+  { id: 'employees', name: 'Employees', description: 'View and manage employees' },
+  { id: 'contractors', name: 'Contractors', description: 'View and manage contractors' },
+  { id: 'timeEntry', name: 'Time Entry', description: 'Enter and manage time' },
+  { id: 'availability', name: 'Availability', description: 'Manage employee availability' },
+  { id: 'invoicing', name: 'Invoicing', description: 'View and generate invoices' },
+  { id: 'payroll', name: 'Payroll', description: 'View and generate payroll' },
+  { id: 'pinks', name: 'Pinks', description: 'View pink sheets' },
+  { id: 'rates', name: 'Rates', description: 'Manage rate cards' },
+  { id: 'users', name: 'User Management', description: 'Manage system users' },
+  { id: 'roles', name: 'Role Management', description: 'Manage user roles' },
+  { id: 'settings', name: 'Settings', description: 'System settings' },
+  { id: 'auditLog', name: 'Audit Log', description: 'View audit logs' }
+];
+
+// ✅ CORRECT permission levels matching your existing roles
+const PERMISSION_LEVELS = ['read', 'create', 'update', 'delete'];
+
+function RoleManager() {
   const [roles, setRoles] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [creatingRole, setCreatingRole] = useState(false);
-  const [editingRole, setEditingRole] = useState(null);
-
-  const canCreate = hasPermission(permissions, 'roles', 'create');
-  const canUpdate = hasPermission(permissions, 'roles', 'update');
-  const canDelete = hasPermission(permissions, 'roles', 'delete');
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [selectedRole, setSelectedRole] = useState(null);
 
   useEffect(() => {
-    loadRoles();
-  }, []);
+    console.log('🔴 Setting up roles listener');
 
-  const loadRoles = async () => {
-    try {
-      const snapshot = await getDocs(collection(db, 'roles'));
-      const rolesData = snapshot.docs.map(doc => ({
+    const unsubscribe = onSnapshot(collection(db, 'roles'), (snapshot) => {
+      const rolesList = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
-      setRoles(rolesData);
-    } catch (error) {
-      console.error('Error loading roles:', error);
-    } finally {
+      console.log(`🔄 Roles updated: ${rolesList.length} roles`);
+      if (rolesList.length > 0) {
+        console.log('Sample role:', rolesList[0]);
+      }
+      setRoles(rolesList);
       setLoading(false);
+    }, (error) => {
+      console.error('❌ Error loading roles:', error);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  const handleCreateRole = () => {
+    setShowCreateModal(true);
+  };
+
+  const handleEditRole = (role) => {
+    setSelectedRole(role);
+    setShowEditModal(true);
+  };
+
+  const handleDeleteRole = async (role) => {
+    if (!confirm(`Delete role "${role.name || role.roleName}"? This cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      await deleteDoc(doc(db, 'roles', role.id));
+      alert('Role deleted successfully!');
+    } catch (error) {
+      console.error('Error deleting role:', error);
+      alert('Failed to delete role: ' + error.message);
     }
   };
 
+  const handleCloseModals = () => {
+    setShowCreateModal(false);
+    setShowEditModal(false);
+    setSelectedRole(null);
+  };
+
   if (loading) {
-    return <div className="loading-screen"><div className="spinner"></div></div>;
+    return <div style={{ padding: '20px' }}>Loading roles...</div>;
+  }
+
+  if (roles.length === 0) {
+    return (
+      <div style={{ padding: '12px' }}>
+        <div style={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center',
+          marginBottom: '16px'
+        }}>
+          <h2 style={{ fontSize: '20px', margin: 0 }}>
+            Role Management (0)
+          </h2>
+          <button 
+            onClick={handleCreateRole}
+            className="btn btn-primary"
+            style={{ fontSize: '12px', padding: '6px 12px' }}
+          >
+            + Add Role
+          </button>
+        </div>
+        <div style={{ 
+          textAlign: 'center', 
+          padding: '40px', 
+          color: '#999',
+          background: '#f5f5f5',
+          borderRadius: '4px'
+        }}>
+          No roles found. Click "+ Add Role" to create one.
+        </div>
+        
+        {showCreateModal && (
+          <CreateRoleModal onClose={handleCloseModals} />
+        )}
+      </div>
+    );
   }
 
   return (
     <div style={{ padding: '12px' }}>
-      {/* Header */}
       <div style={{ 
         display: 'flex', 
         justifyContent: 'space-between', 
         alignItems: 'center',
         marginBottom: '16px'
       }}>
-        <h2 style={{ margin: 0, fontSize: '20px' }}>Roles</h2>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button onClick={() => setCreatingRole(true)} className="btn btn-primary" style={{ padding: '6px 12px', fontSize: '12px' }}>
-            + Add Role
-          </button>
-          <button onClick={loadRoles} className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '12px' }}>
-            Refresh
-          </button>
-        </div>
+        <h2 style={{ fontSize: '20px', margin: 0 }}>
+          Role Management ({roles.length})
+        </h2>
+        <button 
+          onClick={handleCreateRole}
+          className="btn btn-primary"
+          style={{ fontSize: '12px', padding: '6px 12px' }}
+        >
+          + Add Role
+        </button>
       </div>
 
-      <div className="jobs-grid">
-        {roles.map(role => (
-          <RoleCard 
-            key={role.id} 
-            role={role} 
-            onEdit={canUpdate ? setEditingRole : null}
-            onDelete={canDelete ? loadRoles : null}
-          />
-        ))}
+      {/* Roles Grid */}
+      <div style={{ 
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))',
+        gap: '16px'
+      }}>
+        {roles.map(role => {
+          const permissions = role.permissions || {};
+          const permissionCount = Object.keys(permissions).length;
+          const roleName = role.name || role.roleName || 'Unnamed Role';
+
+          return (
+            <div
+              key={role.id}
+              style={{
+                background: 'white',
+                border: '2px solid ' + (role.color || '#e0e0e0'),
+                borderRadius: '8px',
+                padding: '16px',
+                transition: 'all 0.2s'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.boxShadow = '0 4px 8px rgba(0,0,0,0.1)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.boxShadow = 'none';
+              }}
+            >
+              <div style={{ 
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '12px'
+              }}>
+                <div style={{
+                  background: role.color || '#e0e0e0',
+                  color: 'white',
+                  padding: '6px 12px',
+                  borderRadius: '4px',
+                  fontSize: '16px',
+                  fontWeight: '600'
+                }}>
+                  {roleName}
+                </div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    onClick={() => handleEditRole(role)}
+                    className="btn btn-secondary"
+                    style={{ fontSize: '11px', padding: '4px 8px' }}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => handleDeleteRole(role)}
+                    style={{
+                      background: '#f44336',
+                      color: 'white',
+                      border: 'none',
+                      padding: '4px 8px',
+                      borderRadius: '4px',
+                      fontSize: '11px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ 
+                fontSize: '13px',
+                color: '#5f6368',
+                marginBottom: '12px',
+                minHeight: '40px'
+              }}>
+                {role.description || 'No description'}
+              </div>
+
+              <div style={{
+                padding: '12px',
+                background: '#f5f5f5',
+                borderRadius: '4px',
+                fontSize: '12px'
+              }}>
+                <div style={{ fontWeight: '600', marginBottom: '8px' }}>
+                  Permissions ({permissionCount})
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                  {Object.entries(permissions).map(([key, perms]) => {
+                    const feature = AVAILABLE_PERMISSIONS.find(p => p.id === key);
+                    if (!feature) return null;
+
+                    // ✅ Check permissions using YOUR format
+                    const hasRead = perms?.read === true;
+                    const hasCreate = perms?.create === true;
+                    const hasUpdate = perms?.update === true;
+                    const hasDelete = perms?.delete === true;
+
+                    let accessLevel = '';
+                    if (hasRead && hasCreate && hasUpdate && hasDelete) {
+                      accessLevel = 'Full';
+                    } else if (hasRead && hasUpdate) {
+                      accessLevel = 'Edit';
+                    } else if (hasRead) {
+                      accessLevel = 'View';
+                    } else {
+                      accessLevel = 'Custom';
+                    }
+
+                    return (
+                      <span
+                        key={key}
+                        style={{
+                          background: 'white',
+                          padding: '2px 6px',
+                          borderRadius: '3px',
+                          fontSize: '10px',
+                          border: '1px solid #e0e0e0'
+                        }}
+                      >
+                        {feature.name}: {accessLevel}
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          );
+        })}
       </div>
 
-      {creatingRole && (
-        <RoleModal
-          role={null}
-          onClose={() => setCreatingRole(false)}
-          onSave={() => {
-            setCreatingRole(false);
-            loadRoles();
-          }}
-        />
+      {showCreateModal && (
+        <CreateRoleModal onClose={handleCloseModals} />
       )}
 
-      {editingRole && (
-        <RoleModal
-          role={editingRole}
-          onClose={() => setEditingRole(null)}
-          onSave={() => {
-            setEditingRole(null);
-            loadRoles();
-          }}
-        />
+      {showEditModal && selectedRole && (
+        <EditRoleModal role={selectedRole} onClose={handleCloseModals} />
       )}
     </div>
   );
 }
 
-function RoleCard({ role, onEdit, onDelete }) {
-  const handleDelete = async () => {
-    if (role.isSystemRole) {
-      alert('Cannot delete system role');
+// Create Role Modal
+function CreateRoleModal({ onClose }) {
+  const [formData, setFormData] = useState({
+    name: '',
+    description: '',
+    color: '#1a73e8',
+    permissions: {}
+  });
+
+  const handleChange = (field, value) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handlePermissionToggle = (featureId, level) => {
+    setFormData(prev => {
+      const currentPerms = prev.permissions[featureId] || {};
+      
+      // ✅ Use YOUR permission format: {read: true, create: true, etc.}
+      const newPerms = {
+        ...currentPerms,
+        [level]: !currentPerms[level]
+      };
+
+      return {
+        ...prev,
+        permissions: {
+          ...prev.permissions,
+          [featureId]: newPerms
+        }
+      };
+    });
+  };
+
+  const handleCreate = async () => {
+    if (!formData.name) {
+      alert('Role name is required!');
       return;
     }
 
-    if (!confirm(`Delete role "${role.roleName}"?`)) return;
-
     try {
-      await deleteDoc(doc(db, 'roles', role.id));
-      await logAudit('DELETE_ROLE', 'roles', role.id);
-      onDelete();
+      const roleId = formData.name.toLowerCase().replace(/\s+/g, '_');
+      
+      // ✅ Save in YOUR format exactly
+      await setDoc(doc(db, 'roles', roleId), {
+        name: formData.name,
+        roleName: formData.name,  // Add both for compatibility
+        description: formData.description,
+        color: formData.color,
+        permissions: formData.permissions,  // Already in correct format
+        isSystemRole: false,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      });
+
+      alert('Role created successfully!');
+      onClose();
     } catch (error) {
-      alert('Error deleting role: ' + error.message);
+      console.error('Error creating role:', error);
+      alert('Failed to create role: ' + error.message);
     }
   };
 
-  const permissionCount = Object.values(role.permissions).reduce((count, perms) => {
-    return count + Object.values(perms).filter(p => p === true).length;
-  }, 0);
-
   return (
-    <div className="job-card" style={{ padding: '12px' }}>
-      <div className="job-header" style={{ marginBottom: '10px' }}>
-        <span className="job-id" style={{ fontSize: '13px' }}>{role.roleName}</span>
-        {role.isSystemRole && (
-          <span className="job-series" style={{ fontSize: '10px', padding: '2px 6px' }}>System Role</span>
-        )}
-      </div>
-
-      <div className="job-info">
-        <div className="job-info-item">
-          <div className="job-info-label" style={{ fontSize: '10px' }}>Permissions</div>
-          <div className="job-info-value" style={{ fontSize: '11px' }}>{permissionCount} granted</div>
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '700px' }}>
+        <div className="modal-header">
+          <h2>Create New Role</h2>
+          <button className="modal-close" onClick={onClose}>×</button>
         </div>
-        <div className="job-info-item">
-          <div className="job-info-label" style={{ fontSize: '10px' }}>Created</div>
-          <div className="job-info-value" style={{ fontSize: '11px' }}>
-            {role.createdAt?.toDate?.()?.toLocaleDateString() || 'Unknown'}
+
+        <div className="modal-content" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+          <div className="form-group">
+            <label>Role Name *</label>
+            <input
+              type="text"
+              value={formData.name}
+              onChange={(e) => handleChange('name', e.target.value)}
+              placeholder="e.g., Manager, Supervisor, Admin"
+            />
           </div>
-        </div>
-      </div>
 
-      <div className="job-actions" style={{ marginTop: '10px' }}>
-        {onEdit && (
-          <button onClick={() => onEdit(role)} className="btn btn-secondary btn-small" style={{ padding: '4px 8px', fontSize: '10px' }}>
-            Edit
+          <div className="form-group">
+            <label>Description</label>
+            <textarea
+              value={formData.description}
+              onChange={(e) => handleChange('description', e.target.value)}
+              placeholder="Describe this role's responsibilities..."
+              rows="3"
+            />
+          </div>
+
+          <div className="form-group">
+            <label>Color</label>
+            <input
+              type="color"
+              value={formData.color}
+              onChange={(e) => handleChange('color', e.target.value)}
+              style={{ width: '100px', height: '40px' }}
+            />
+          </div>
+
+          <h3 style={{ fontSize: '14px', fontWeight: '600', marginTop: '20px', marginBottom: '12px' }}>
+            Permissions
+          </h3>
+
+          <PermissionsMatrix
+            permissions={formData.permissions}
+            onPermissionToggle={handlePermissionToggle}
+          />
+        </div>
+
+        <div className="modal-actions">
+          <button onClick={onClose} className="btn btn-secondary">
+            Cancel
           </button>
-        )}
-        {onDelete && !role.isSystemRole && (
-          <button onClick={handleDelete} className="btn btn-secondary btn-small" style={{ padding: '4px 8px', fontSize: '10px' }}>
-            Delete
+          <button onClick={handleCreate} className="btn btn-primary">
+            Create Role
           </button>
-        )}
+        </div>
       </div>
     </div>
   );
 }
 
-function RoleModal({ role, onClose, onSave }) {
-  const [roleName, setRoleName] = useState(role?.roleName || '');
-  const [perms, setPerms] = useState(role?.permissions || JSON.parse(JSON.stringify(defaultPermissions)));
-  const [loading, setLoading] = useState(false);
+// Edit Role Modal
+function EditRoleModal({ role, onClose }) {
+  const [formData, setFormData] = useState({
+    name: role.name || role.roleName || '',
+    description: role.description || '',
+    color: role.color || '#1a73e8',
+    permissions: role.permissions || {}
+  });
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
+  const handleChange = (field, value) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+  };
 
-    try {
-      const roleData = {
-        roleName,
-        permissions: perms,
-        updatedAt: new Date()
+  const handlePermissionToggle = (featureId, level) => {
+    setFormData(prev => {
+      const currentPerms = prev.permissions[featureId] || {};
+      
+      const newPerms = {
+        ...currentPerms,
+        [level]: !currentPerms[level]
       };
 
-      if (role) {
-        // Update existing
-        await updateDoc(doc(db, 'roles', role.id), roleData);
-        await logAudit('UPDATE_ROLE', 'roles', role.id, { roleName });
-      } else {
-        // Create new
-        roleData.createdBy = auth.currentUser.uid;
-        roleData.createdAt = new Date();
-        roleData.isSystemRole = false;
-        
-        const docRef = await addDoc(collection(db, 'roles'), roleData);
-        await logAudit('CREATE_ROLE', 'roles', docRef.id, { roleName });
-      }
+      return {
+        ...prev,
+        permissions: {
+          ...prev.permissions,
+          [featureId]: newPerms
+        }
+      };
+    });
+  };
 
-      onSave();
+  const handleSave = async () => {
+    try {
+      await updateDoc(doc(db, 'roles', role.id), {
+        name: formData.name,
+        roleName: formData.name,
+        description: formData.description,
+        color: formData.color,
+        permissions: formData.permissions,
+        updatedAt: new Date()
+      });
+
+      alert('Role updated successfully!');
       onClose();
     } catch (error) {
-      alert('Error saving role: ' + error.message);
-    } finally {
-      setLoading(false);
+      console.error('Error updating role:', error);
+      alert('Failed to update role: ' + error.message);
     }
   };
-
-  const togglePermission = (collection, action) => {
-    setPerms(prev => ({
-      ...prev,
-      [collection]: {
-        ...prev[collection],
-        [action]: !prev[collection][action]
-      }
-    }));
-  };
-
-  const handleOverlayMouseDown = (e) => {
-    if (e.target === e.currentTarget) {
-      onClose();
-    }
-  };
-
-  const collections = ['jobs', 'employees', 'contractors', 'rates', 'users', 'roles'];
-  const actions = ['create', 'read', 'update', 'delete'];
 
   return (
-    <div className="modal-overlay" onMouseDown={handleOverlayMouseDown}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '800px' }}>
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '700px' }}>
         <div className="modal-header">
-          <h2>{role ? 'Edit Role' : 'Create New Role'}</h2>
+          <h2>Edit Role: {role.name || role.roleName}</h2>
           <button className="modal-close" onClick={onClose}>×</button>
         </div>
 
-        <form onSubmit={handleSubmit}>
-          <div className="modal-content">
-            <div className="form-group">
-              <label>Role Name</label>
-              <input
-                value={roleName}
-                onChange={(e) => setRoleName(e.target.value)}
-                required
-                placeholder="e.g., Office Manager, Field Supervisor"
-              />
-            </div>
-
-            <h3 style={{ marginTop: '24px', marginBottom: '16px' }}>Permissions</h3>
-            
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-                <thead>
-                  <tr style={{ borderBottom: '2px solid #e0e0e0' }}>
-                    <th style={{ textAlign: 'left', padding: '8px 10px' }}>Collection</th>
-                    {actions.map(action => (
-                      <th key={action} style={{ textAlign: 'center', padding: '8px 10px', textTransform: 'capitalize' }}>
-                        {action}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {collections.map(coll => (
-                    <tr key={coll} style={{ borderBottom: '1px solid #e0e0e0' }}>
-                      <td style={{ padding: '8px 10px', textTransform: 'capitalize', fontWeight: '500' }}>
-                        {coll}
-                      </td>
-                      {actions.map(action => (
-                        <td key={action} style={{ textAlign: 'center', padding: '8px 10px' }}>
-                          <input
-                            type="checkbox"
-                            checked={perms[coll]?.[action] || false}
-                            onChange={() => togglePermission(coll, action)}
-                            style={{ width: '16px', height: '16px', cursor: 'pointer' }}
-                          />
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                  <tr style={{ borderBottom: '1px solid #e0e0e0' }}>
-                    <td style={{ padding: '8px 10px', textTransform: 'capitalize', fontWeight: '500' }}>
-                      Audit Log
-                    </td>
-                    <td colSpan="3"></td>
-                    <td style={{ textAlign: 'center', padding: '8px 10px' }}>
-                      <input
-                        type="checkbox"
-                        checked={perms.auditLog?.read || false}
-                        onChange={() => setPerms(prev => ({
-                          ...prev,
-                          auditLog: { read: !prev.auditLog?.read }
-                        }))}
-                        style={{ width: '16px', height: '16px', cursor: 'pointer' }}
-                      />
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
+        <div className="modal-content" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+          <div className="form-group">
+            <label>Role Name</label>
+            <input
+              type="text"
+              value={formData.name}
+              onChange={(e) => handleChange('name', e.target.value)}
+            />
           </div>
 
-          <div className="modal-actions">
-            <button type="button" onClick={onClose} className="btn btn-secondary">
-              Cancel
-            </button>
-            <button type="submit" className="btn btn-primary" disabled={loading}>
-              {loading ? 'Saving...' : (role ? 'Update Role' : 'Create Role')}
-            </button>
+          <div className="form-group">
+            <label>Description</label>
+            <textarea
+              value={formData.description}
+              onChange={(e) => handleChange('description', e.target.value)}
+              rows="3"
+            />
           </div>
-        </form>
+
+          <div className="form-group">
+            <label>Color</label>
+            <input
+              type="color"
+              value={formData.color}
+              onChange={(e) => handleChange('color', e.target.value)}
+              style={{ width: '100px', height: '40px' }}
+            />
+          </div>
+
+          <h3 style={{ fontSize: '14px', fontWeight: '600', marginTop: '20px', marginBottom: '12px' }}>
+            Permissions
+          </h3>
+
+          <PermissionsMatrix
+            permissions={formData.permissions}
+            onPermissionToggle={handlePermissionToggle}
+          />
+        </div>
+
+        <div className="modal-actions">
+          <button onClick={onClose} className="btn btn-secondary">
+            Cancel
+          </button>
+          <button onClick={handleSave} className="btn btn-primary">
+            Save Changes
+          </button>
+        </div>
       </div>
+    </div>
+  );
+}
+
+// Permissions Matrix
+function PermissionsMatrix({ permissions, onPermissionToggle }) {
+  return (
+    <div style={{
+      border: '1px solid #e0e0e0',
+      borderRadius: '4px',
+      overflow: 'hidden'
+    }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <thead>
+          <tr style={{ background: '#f5f5f5' }}>
+            <th style={{ padding: '12px', textAlign: 'left', fontSize: '12px', fontWeight: '600', width: '30%' }}>
+              Feature
+            </th>
+            <th style={{ padding: '12px', textAlign: 'center', fontSize: '12px', fontWeight: '600', width: '17.5%' }}>
+              Read
+            </th>
+            <th style={{ padding: '12px', textAlign: 'center', fontSize: '12px', fontWeight: '600', width: '17.5%' }}>
+              Create
+            </th>
+            <th style={{ padding: '12px', textAlign: 'center', fontSize: '12px', fontWeight: '600', width: '17.5%' }}>
+              Update
+            </th>
+            <th style={{ padding: '12px', textAlign: 'center', fontSize: '12px', fontWeight: '600', width: '17.5%' }}>
+              Delete
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {AVAILABLE_PERMISSIONS.map((feature, index) => {
+            const featurePerms = permissions[feature.id] || {};
+
+            return (
+              <tr
+                key={feature.id}
+                style={{
+                  background: index % 2 === 0 ? 'white' : '#fafafa',
+                  borderBottom: '1px solid #e0e0e0'
+                }}
+              >
+                <td style={{ padding: '12px' }}>
+                  <div style={{ fontSize: '13px', fontWeight: '600' }}>
+                    {feature.name}
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#5f6368' }}>
+                    {feature.description}
+                  </div>
+                </td>
+                {PERMISSION_LEVELS.map(level => (
+                  <td key={level} style={{ padding: '12px', textAlign: 'center' }}>
+                    <input
+                      type="checkbox"
+                      checked={featurePerms[level] === true}
+                      onChange={() => onPermissionToggle(feature.id, level)}
+                      style={{ cursor: 'pointer', width: '18px', height: '18px' }}
+                    />
+                  </td>
+                ))}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }

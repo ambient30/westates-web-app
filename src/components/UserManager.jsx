@@ -1,295 +1,565 @@
 import { useState, useEffect } from 'react';
-import { collection, getDocs, doc, setDoc, deleteDoc } from '../utils/firestoreTracker';
+import { collection, onSnapshot, doc, setDoc, updateDoc, deleteDoc, getDocs } from '../utils/firestoreTracker';
 import { db } from '../firebase';
-import { hasPermission } from '../utils/permissions';
-import { logAudit } from '../utils/auditLog';
 
-function UserManager({ permissions }) {
+function UserManager() {
   const [users, setUsers] = useState([]);
   const [roles, setRoles] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showInviteModal, setShowInviteModal] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [hasWritePermission, setHasWritePermission] = useState(null);
 
-  const canCreate = hasPermission(permissions, 'users', 'create');
-  const canUpdate = hasPermission(permissions, 'users', 'update');
-  const canDelete = hasPermission(permissions, 'users', 'delete');
-
+  // Load users and roles
   useEffect(() => {
-    loadData();
+    console.log('🔴 Setting up users and roles listeners');
+
+    // Test write permission on mount
+    const testPermissions = async () => {
+      try {
+        // Try to read users collection first
+        const testRead = await getDocs(collection(db, 'users'));
+        console.log('✅ Can read users collection');
+        setHasWritePermission(true);
+      } catch (error) {
+        console.error('❌ Cannot read users collection:', error);
+        setHasWritePermission(false);
+      }
+    };
+
+    testPermissions();
+
+    // Listen to users collection
+    const usersUnsubscribe = onSnapshot(
+      collection(db, 'users'), 
+      (snapshot) => {
+        const usersList = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        console.log(`🔄 Users updated: ${usersList.length} users`);
+        setUsers(usersList);
+        setLoading(false);
+      },
+      (error) => {
+        console.error('❌ Error loading users:', error);
+        setLoading(false);
+        setHasWritePermission(false);
+      }
+    );
+
+    // Listen to roles collection
+    const rolesUnsubscribe = onSnapshot(collection(db, 'roles'), (snapshot) => {
+      const rolesList = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      console.log(`🔄 Roles updated: ${rolesList.length} roles`);
+      setRoles(rolesList);
+    });
+
+    return () => {
+      usersUnsubscribe();
+      rolesUnsubscribe();
+    };
   }, []);
 
-  const loadData = async () => {
+  const handleCreateUser = () => {
+    if (hasWritePermission === false) {
+      alert('⚠️ PERMISSION ERROR\n\nYou do not have permission to create users.\n\nThis is a Firestore security rules issue. Contact your administrator to update the security rules for the "users" collection.');
+      return;
+    }
+    setShowCreateModal(true);
+  };
+
+  const handleEditUser = (user) => {
+    if (hasWritePermission === false) {
+      alert('⚠️ PERMISSION ERROR\n\nYou do not have permission to edit users.\n\nThis is a Firestore security rules issue. Contact your administrator.');
+      return;
+    }
+    setSelectedUser(user);
+    setShowEditModal(true);
+  };
+
+  const handleDeleteUser = async (user) => {
+    if (hasWritePermission === false) {
+      alert('⚠️ PERMISSION ERROR\n\nYou do not have permission to delete users.');
+      return;
+    }
+
+    if (!confirm(`Delete user ${user.email}? This cannot be undone.`)) {
+      return;
+    }
+
     try {
-      const [usersSnap, rolesSnap] = await Promise.all([
-        getDocs(collection(db, 'users')),
-        getDocs(collection(db, 'roles'))
-      ]);
-
-      const usersData = usersSnap.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-
-      const rolesData = rolesSnap.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-
-      setUsers(usersData);
-      setRoles(rolesData);
+      await deleteDoc(doc(db, 'users', user.id));
+      alert('User deleted successfully!');
     } catch (error) {
-      console.error('Error loading data:', error);
-    } finally {
-      setLoading(false);
+      console.error('Error deleting user:', error);
+      if (error.code === 'permission-denied') {
+        alert('⚠️ PERMISSION DENIED\n\nYour Firestore security rules do not allow deleting users.\n\nUpdate your security rules to allow this operation.');
+      } else {
+        alert('Failed to delete user: ' + error.message);
+      }
     }
   };
 
-  const getRoleName = (roleId) => {
-    const role = roles.find(r => r.id === roleId);
-    return role?.roleName || 'Unknown';
+  const handleToggleActive = async (user) => {
+    if (hasWritePermission === false) {
+      alert('⚠️ PERMISSION ERROR\n\nYou do not have permission to update users.');
+      return;
+    }
+
+    try {
+      await updateDoc(doc(db, 'users', user.id), {
+        isActive: !user.isActive,
+        updatedAt: new Date()
+      });
+    } catch (error) {
+      console.error('Error toggling user active state:', error);
+      if (error.code === 'permission-denied') {
+        alert('⚠️ PERMISSION DENIED\n\nYour Firestore security rules do not allow updating users.');
+      } else {
+        alert('Failed to update user: ' + error.message);
+      }
+    }
+  };
+
+  const handleCloseModals = () => {
+    setShowCreateModal(false);
+    setShowEditModal(false);
+    setSelectedUser(null);
   };
 
   if (loading) {
-    return <div className="loading-screen"><div className="spinner"></div></div>;
+    return <div style={{ padding: '20px' }}>Loading users...</div>;
   }
 
   return (
     <div style={{ padding: '12px' }}>
-      {/* Header */}
       <div style={{ 
         display: 'flex', 
         justifyContent: 'space-between', 
         alignItems: 'center',
         marginBottom: '16px'
       }}>
-        <h2 style={{ margin: 0, fontSize: '20px' }}>Users</h2>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button onClick={() => setShowInviteModal(true)} className="btn btn-primary" style={{ padding: '6px 12px', fontSize: '12px' }}>
-            + Add User
-          </button>
-          <button onClick={loadData} className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '12px' }}>
-            Refresh
-          </button>
+        <h2 style={{ fontSize: '20px', margin: 0 }}>
+          User Management ({users.length})
+        </h2>
+        <button 
+          onClick={handleCreateUser}
+          className="btn btn-primary"
+          style={{ fontSize: '12px', padding: '6px 12px' }}
+        >
+          + Add User
+        </button>
+      </div>
+
+      {/* Permission Warning */}
+      {hasWritePermission === false && (
+        <div style={{
+          padding: '16px',
+          background: '#fff3cd',
+          border: '1px solid #ffc107',
+          borderRadius: '4px',
+          marginBottom: '16px',
+          fontSize: '13px'
+        }}>
+          <div style={{ fontWeight: '600', marginBottom: '8px' }}>⚠️ Limited Permissions</div>
+          <div>You can view users but cannot create, edit, or delete them. This is controlled by Firestore security rules. Contact your administrator to grant write access to the "users" collection.</div>
         </div>
+      )}
+
+      {/* Users Table */}
+      <div style={{ 
+        background: 'white',
+        border: '1px solid #e0e0e0',
+        borderRadius: '4px',
+        overflow: 'hidden'
+      }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr style={{ background: '#f5f5f5', borderBottom: '2px solid #e0e0e0' }}>
+              <th style={{ padding: '12px', textAlign: 'left', fontSize: '13px', fontWeight: '600' }}>Name</th>
+              <th style={{ padding: '12px', textAlign: 'left', fontSize: '13px', fontWeight: '600' }}>Email</th>
+              <th style={{ padding: '12px', textAlign: 'left', fontSize: '13px', fontWeight: '600' }}>Role</th>
+              <th style={{ padding: '12px', textAlign: 'center', fontSize: '13px', fontWeight: '600' }}>Status</th>
+              <th style={{ padding: '12px', textAlign: 'center', fontSize: '13px', fontWeight: '600' }}>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {users.map((user, index) => {
+              const role = roles.find(r => r.id === user.roleId);
+              const isActive = user.isActive !== false;
+
+              return (
+                <tr 
+                  key={user.id}
+                  style={{ 
+                    borderBottom: '1px solid #e0e0e0',
+                    background: index % 2 === 0 ? 'white' : '#fafafa',
+                    opacity: isActive ? 1 : 0.6
+                  }}
+                >
+                  <td style={{ padding: '12px', fontSize: '13px' }}>
+                    {user.displayName || user.name || 'No name'}
+                  </td>
+                  <td style={{ padding: '12px', fontSize: '13px' }}>
+                    {user.email}
+                  </td>
+                  <td style={{ padding: '12px', fontSize: '13px' }}>
+                    <span style={{
+                      background: role?.color || '#e0e0e0',
+                      color: 'white',
+                      padding: '4px 8px',
+                      borderRadius: '4px',
+                      fontSize: '11px',
+                      fontWeight: '600'
+                    }}>
+                      {role?.name || 'No role'}
+                    </span>
+                  </td>
+                  <td style={{ padding: '12px', textAlign: 'center', fontSize: '13px' }}>
+                    <button
+                      onClick={() => handleToggleActive(user)}
+                      disabled={hasWritePermission === false}
+                      style={{
+                        background: isActive ? '#4caf50' : '#9e9e9e',
+                        color: 'white',
+                        border: 'none',
+                        padding: '4px 8px',
+                        borderRadius: '4px',
+                        fontSize: '11px',
+                        cursor: hasWritePermission === false ? 'not-allowed' : 'pointer',
+                        fontWeight: '600',
+                        opacity: hasWritePermission === false ? 0.5 : 1
+                      }}
+                    >
+                      {isActive ? 'Active' : 'Inactive'}
+                    </button>
+                  </td>
+                  <td style={{ padding: '12px', textAlign: 'center' }}>
+                    <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                      <button
+                        onClick={() => handleEditUser(user)}
+                        disabled={hasWritePermission === false}
+                        className="btn btn-secondary"
+                        style={{ 
+                          fontSize: '11px', 
+                          padding: '4px 8px',
+                          opacity: hasWritePermission === false ? 0.5 : 1,
+                          cursor: hasWritePermission === false ? 'not-allowed' : 'pointer'
+                        }}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => handleDeleteUser(user)}
+                        disabled={hasWritePermission === false}
+                        style={{
+                          background: '#f44336',
+                          color: 'white',
+                          border: 'none',
+                          padding: '4px 8px',
+                          borderRadius: '4px',
+                          fontSize: '11px',
+                          cursor: hasWritePermission === false ? 'not-allowed' : 'pointer',
+                          opacity: hasWritePermission === false ? 0.5 : 1
+                        }}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
 
-      <div className="jobs-grid">
-        {users.map(user => (
-          <UserCard 
-            key={user.id}
-            user={user}
-            roleName={getRoleName(user.roleId)}
-            roles={roles}
-            canUpdate={canUpdate}
-            canDelete={canDelete}
-            onUpdate={loadData}
-          />
-        ))}
-      </div>
-
-      {showInviteModal && (
-        <InviteUserModal
+      {/* Create User Modal */}
+      {showCreateModal && (
+        <CreateUserModal
           roles={roles}
-          onClose={() => setShowInviteModal(false)}
-          onSave={loadData}
+          onClose={handleCloseModals}
+        />
+      )}
+
+      {/* Edit User Modal */}
+      {showEditModal && selectedUser && (
+        <EditUserModal
+          user={selectedUser}
+          roles={roles}
+          onClose={handleCloseModals}
         />
       )}
     </div>
   );
 }
 
-function UserCard({ user, roleName, roles, canUpdate, canDelete, onUpdate }) {
-  const [editing, setEditing] = useState(false);
-  const [selectedRole, setSelectedRole] = useState(user.roleId || roles[0]?.id);
-  const isPending = !user.roleId;
+// Create User Modal Component
+function CreateUserModal({ roles, onClose }) {
+  const [formData, setFormData] = useState({
+    email: '',
+    password: '',
+    displayName: '',
+    roleId: '',
+    isActive: true,
+    sendWelcomeEmail: false
+  });
 
-  const handleUpdateRole = async () => {
-    try {
-      await setDoc(doc(db, 'users', user.id), {
-        ...user,
-        roleId: selectedRole,
-        updatedAt: new Date()
-      }, { merge: true });
-
-      await logAudit('UPDATE_USER', 'users', user.id, { roleId: selectedRole });
-      setEditing(false);
-      onUpdate();
-    } catch (error) {
-      alert('Error updating user: ' + error.message);
-    }
+  const handleChange = (field, value) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleDelete = async () => {
-    if (!confirm(`Remove user ${user.email}?`)) return;
+  const handleCreate = async () => {
+    if (!formData.email || !formData.password) {
+      alert('Email and password are required!');
+      return;
+    }
+
+    if (!formData.roleId) {
+      alert('Please select a role!');
+      return;
+    }
 
     try {
-      await deleteDoc(doc(db, 'users', user.id));
-      await logAudit('DELETE_USER', 'users', user.id);
-      onUpdate();
+      // Create user document in Firestore
+      const userId = formData.email.split('@')[0];
+      
+      await setDoc(doc(db, 'users', userId), {
+        email: formData.email,
+        displayName: formData.displayName,
+        roleId: formData.roleId,
+        isActive: formData.isActive,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      });
+
+      alert('✅ User created successfully!\n\nNote: This creates the Firestore user document. Firebase Authentication user must be created separately via Cloud Functions or Firebase Console.');
+      onClose();
     } catch (error) {
-      alert('Error deleting user: ' + error.message);
+      console.error('Error creating user:', error);
+      
+      if (error.code === 'permission-denied') {
+        alert('⚠️ PERMISSION DENIED\n\nYour Firestore security rules do not allow creating users in the "users" collection.\n\nTo fix this, update your Firestore security rules to allow authenticated users to create user documents.\n\nExample rule:\nmatch /users/{userId} {\n  allow write: if request.auth != null;\n}');
+      } else {
+        alert('Failed to create user: ' + error.message);
+      }
     }
   };
 
   return (
-    <div className="job-card" style={{ padding: '12px' }}>
-      <div className="job-header" style={{ marginBottom: '10px' }}>
-        <span className="job-id" style={{ fontSize: '13px' }}>{user.fullName || user.email}</span>
-        {isPending && (
-          <span className="job-series" style={{ background: '#fdd835', color: '#000', fontSize: '10px', padding: '2px 6px' }}>
-            Pending
-          </span>
-        )}
-      </div>
-
-      <div className="job-info">
-        <div className="job-info-item">
-          <div className="job-info-label" style={{ fontSize: '10px' }}>Email</div>
-          <div className="job-info-value" style={{ fontSize: '11px' }}>{user.email}</div>
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
+        <div className="modal-header">
+          <h2>Create New User</h2>
+          <button className="modal-close" onClick={onClose}>×</button>
         </div>
-        <div className="job-info-item">
-          <div className="job-info-label" style={{ fontSize: '10px' }}>Role</div>
-          <div className="job-info-value" style={{ fontSize: '11px' }}>
-            {editing ? (
-              <select 
-                value={selectedRole} 
-                onChange={(e) => setSelectedRole(e.target.value)}
-                style={{ fontSize: '11px', padding: '4px' }}
-              >
-                {roles.map(role => (
-                  <option key={role.id} value={role.id}>{role.roleName}</option>
-                ))}
-              </select>
-            ) : (
-              isPending ? 'No role assigned' : roleName
-            )}
+
+        <div className="modal-content">
+          <div className="form-group">
+            <label>Email *</label>
+            <input
+              type="email"
+              value={formData.email}
+              onChange={(e) => handleChange('email', e.target.value)}
+              placeholder="user@example.com"
+            />
+          </div>
+
+          <div className="form-group">
+            <label>Password *</label>
+            <input
+              type="password"
+              value={formData.password}
+              onChange={(e) => handleChange('password', e.target.value)}
+              placeholder="Minimum 6 characters"
+            />
+          </div>
+
+          <div className="form-group">
+            <label>Display Name</label>
+            <input
+              type="text"
+              value={formData.displayName}
+              onChange={(e) => handleChange('displayName', e.target.value)}
+              placeholder="John Doe"
+            />
+          </div>
+
+          <div className="form-group">
+            <label>Role *</label>
+            <select
+              value={formData.roleId}
+              onChange={(e) => handleChange('roleId', e.target.value)}
+            >
+              <option value="">Select a role...</option>
+              {roles.map(role => (
+                <option key={role.id} value={role.id}>{role.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="form-group">
+            <label>
+              <input
+                type="checkbox"
+                checked={formData.isActive}
+                onChange={(e) => handleChange('isActive', e.target.checked)}
+                style={{ marginRight: '8px' }}
+              />
+              Active
+            </label>
+          </div>
+
+          <div className="form-group">
+            <label>
+              <input
+                type="checkbox"
+                checked={formData.sendWelcomeEmail}
+                onChange={(e) => handleChange('sendWelcomeEmail', e.target.checked)}
+                style={{ marginRight: '8px' }}
+              />
+              Send welcome email
+            </label>
           </div>
         </div>
-      </div>
 
-      <div className="job-actions" style={{ marginTop: '10px' }}>
-        {canUpdate && !editing && (
-          <button onClick={() => setEditing(true)} className="btn btn-primary btn-small" style={{ padding: '4px 8px', fontSize: '10px' }}>
-            {isPending ? 'Assign Role' : 'Change Role'}
+        <div className="modal-actions">
+          <button onClick={onClose} className="btn btn-secondary">
+            Cancel
           </button>
-        )}
-        {editing && (
-          <>
-            <button onClick={handleUpdateRole} className="btn btn-primary btn-small" style={{ padding: '4px 8px', fontSize: '10px' }}>
-              Save
-            </button>
-            <button onClick={() => setEditing(false)} className="btn btn-secondary btn-small" style={{ padding: '4px 8px', fontSize: '10px' }}>
-              Cancel
-            </button>
-          </>
-        )}
-        {canDelete && (
-          <button onClick={handleDelete} className="btn btn-secondary btn-small" style={{ padding: '4px 8px', fontSize: '10px' }}>
-            Remove
+          <button onClick={handleCreate} className="btn btn-primary">
+            Create User
           </button>
-        )}
+        </div>
       </div>
     </div>
   );
 }
 
-function InviteUserModal({ roles, onClose, onSave }) {
-  const [searchEmail, setSearchEmail] = useState('');
-  const [pendingUsers, setPendingUsers] = useState([]);
-  const [selectedUser, setSelectedUser] = useState(null);
-  const [roleId, setRoleId] = useState(roles[0]?.id || '');
-  const [loading, setLoading] = useState(false);
+// Edit User Modal Component
+function EditUserModal({ user, roles, onClose }) {
+  const [formData, setFormData] = useState({
+    displayName: user.displayName || '',
+    email: user.email || '',
+    roleId: user.roleId || '',
+    isActive: user.isActive !== false
+  });
 
-  useEffect(() => {
-    loadPendingUsers();
-  }, []);
+  const handleChange = (field, value) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
+  };
 
-  const loadPendingUsers = async () => {
+  const handleSave = async () => {
     try {
-      // Get all Firebase Auth users
-      // Note: This won't work in client-side code
-      // For now, we'll just let admins manually enter email
-      
-      // In production, you'd use Firebase Admin SDK on the backend
-      // or have users sign up first, then approve them
+      await updateDoc(doc(db, 'users', user.id), {
+        displayName: formData.displayName,
+        roleId: formData.roleId,
+        isActive: formData.isActive,
+        updatedAt: new Date()
+      });
+
+      alert('User updated successfully!');
+      onClose();
     } catch (error) {
-      console.error('Error loading pending users:', error);
+      console.error('Error updating user:', error);
+      
+      if (error.code === 'permission-denied') {
+        alert('⚠️ PERMISSION DENIED\n\nYour Firestore security rules do not allow updating users.');
+      } else {
+        alert('Failed to update user: ' + error.message);
+      }
     }
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    
-    if (!searchEmail) {
-      alert('Please enter an email address');
+  const handleResetPassword = async () => {
+    if (!confirm(`Send password reset email to ${user.email}?`)) {
       return;
     }
 
-    setLoading(true);
-
-    try {
-      // Search for this email in Firebase Auth
-      // Since we can't do this client-side, we'll create a placeholder
-      
-      alert(`Instructions for adding ${searchEmail}:\n\n1. Have them sign up at the login page\n2. They'll see "Pending Approval" message\n3. Come back here and assign them a role\n4. They refresh and can access the system`);
-      
-      onClose();
-    } catch (error) {
-      alert('Error: ' + error.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleOverlayMouseDown = (e) => {
-    if (e.target === e.currentTarget) {
-      onClose();
-    }
+    alert('ℹ️ PASSWORD RESET\n\nPassword reset functionality requires Firebase Auth Admin SDK (Cloud Functions).\n\nTo implement this:\n1. Create a Cloud Function that calls admin.auth().generatePasswordResetLink()\n2. Send the reset link via email\n3. Connect this button to call that function');
   };
 
   return (
-    <div className="modal-overlay" onMouseDown={handleOverlayMouseDown}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
         <div className="modal-header">
-          <h2>Add User</h2>
+          <h2>Edit User: {user.email}</h2>
           <button className="modal-close" onClick={onClose}>×</button>
         </div>
 
         <div className="modal-content">
-          <div style={{ 
-            background: '#e8f0fe', 
-            padding: '16px', 
-            borderRadius: '8px',
-            marginBottom: '20px',
-            fontSize: '14px'
-          }}>
-            <strong>How to add users:</strong>
-            <ol style={{ marginTop: '8px', marginLeft: '20px', lineHeight: '1.6' }}>
-              <li>Have the new user go to the login page</li>
-              <li>They should click "Sign Up" and create an account</li>
-              <li>They'll see a "Pending Approval" message</li>
-              <li>You'll see them appear in the Users list below</li>
-              <li>Assign them a role by clicking "Change Role"</li>
-              <li>They refresh their page and can access the system</li>
-            </ol>
+          <div className="form-group">
+            <label>Display Name</label>
+            <input
+              type="text"
+              value={formData.displayName}
+              onChange={(e) => handleChange('displayName', e.target.value)}
+            />
           </div>
 
-          <div style={{
-            background: '#f8f9fa',
-            padding: '16px',
-            borderRadius: '8px',
-            fontSize: '14px'
+          <div className="form-group">
+            <label>Email (read-only)</label>
+            <input
+              type="email"
+              value={formData.email}
+              disabled
+              style={{ background: '#f5f5f5', cursor: 'not-allowed' }}
+            />
+          </div>
+
+          <div className="form-group">
+            <label>Role</label>
+            <select
+              value={formData.roleId}
+              onChange={(e) => handleChange('roleId', e.target.value)}
+            >
+              <option value="">Select a role...</option>
+              {roles.map(role => (
+                <option key={role.id} value={role.id}>{role.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="form-group">
+            <label>
+              <input
+                type="checkbox"
+                checked={formData.isActive}
+                onChange={(e) => handleChange('isActive', e.target.checked)}
+                style={{ marginRight: '8px' }}
+              />
+              Active
+            </label>
+          </div>
+
+          <div style={{ 
+            marginTop: '16px',
+            padding: '12px',
+            background: '#fff3cd',
+            border: '1px solid #ffc107',
+            borderRadius: '4px'
           }}>
-            <strong>Currently pending approval:</strong>
-            <p style={{ marginTop: '8px', color: '#5f6368' }}>
-              Check the main Users list to see users waiting for role assignment.
-            </p>
+            <button
+              onClick={handleResetPassword}
+              className="btn btn-secondary"
+              style={{ fontSize: '12px', padding: '6px 12px' }}
+            >
+              Send Password Reset Email
+            </button>
           </div>
         </div>
 
         <div className="modal-actions">
-          <button onClick={onClose} className="btn btn-primary">
-            Got It
+          <button onClick={onClose} className="btn btn-secondary">
+            Cancel
+          </button>
+          <button onClick={handleSave} className="btn btn-primary">
+            Save Changes
           </button>
         </div>
       </div>
