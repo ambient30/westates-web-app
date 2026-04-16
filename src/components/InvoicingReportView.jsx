@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { collection, onSnapshot } from '../utils/firestoreTracker';
-import { db } from '../firebase';
+import { collection, onSnapshot, doc, updateDoc } from '../utils/firestoreTracker';
+import { db, auth } from '../firebase';
 
 // ============================================
 // HELPER FUNCTIONS
@@ -987,6 +987,387 @@ function JobDetailedBreakdown({ job }) {
       )}
       
       {/* Travel & Mileage removed - now shown per flagger above */}
+      
+      {/* Custom Parameter Billing Section */}
+      <CustomParameterBillingSection job={job} />
+    </div>
+  );
+}
+
+function CustomParameterBillingSection({ job }) {
+  const [newParamName, setNewParamName] = useState('');
+  const [newEmployeeId, setNewEmployeeId] = useState('');
+  const [newParamRate, setNewParamRate] = useState('');
+  const [newParamHours, setNewParamHours] = useState('');
+  const [newParamNotes, setNewParamNotes] = useState('');
+  const [employees, setEmployees] = useState([]);
+
+  useEffect(() => {
+    const employeesRef = collection(db, 'employees');
+    const unsubscribe = onSnapshot(employeesRef, (snapshot) => {
+      const employeesData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        name: doc.id,
+        ...doc.data()
+      }));
+      setEmployees(employeesData);
+    });
+    
+    return () => unsubscribe();
+  }, []);
+
+  // Collect all custom parameters for this job across all employees
+  const customParams = [];
+  
+  if (job.customParameterBilling) {
+    Object.entries(job.customParameterBilling).forEach(([employeeId, params]) => {
+      Object.entries(params).forEach(([paramName, data]) => {
+        const employee = employees.find(e => e.id === employeeId);
+        customParams.push({
+          employeeId,
+          employeeName: employee?.name || employeeId,
+          paramName,
+          data
+        });
+      });
+    });
+  }
+
+  const handleBillingToggle = async (employeeId, paramName, isBilling) => {
+    try {
+      await updateDoc(doc(db, 'jobs', job.id), {
+        [`customParameterBilling.${employeeId}.${paramName}.invoiceBill`]: isBilling,
+        [`customParameterBilling.${employeeId}.${paramName}.invoiceApprovedBy`]: auth.currentUser?.uid || 'unknown',
+        [`customParameterBilling.${employeeId}.${paramName}.invoiceApprovedAt`]: new Date(),
+        updatedAt: new Date()
+      });
+    } catch (err) {
+      alert('Error updating billing: ' + err.message);
+    }
+  };
+
+  const handleBillingChange = async (employeeId, paramName, field, value) => {
+    try {
+      const updates = {
+        [`customParameterBilling.${employeeId}.${paramName}.${field}`]: 
+          field.includes('Rate') || field.includes('Hours') ? parseFloat(value) || 0 : value,
+        updatedAt: new Date()
+      };
+      
+      await updateDoc(doc(db, 'jobs', job.id), updates);
+    } catch (err) {
+      alert('Error updating billing: ' + err.message);
+    }
+  };
+
+  const handleAddCustomParam = async () => {
+    if (!newParamName || !newEmployeeId || !newParamRate || !newParamHours) {
+      alert('Please fill in all fields: parameter name, employee, rate, and hours');
+      return;
+    }
+
+    try {
+      await updateDoc(doc(db, 'jobs', job.id), {
+        [`customParameterBilling.${newEmployeeId}.${newParamName}.invoiceBill`]: true,
+        [`customParameterBilling.${newEmployeeId}.${newParamName}.invoiceRate`]: parseFloat(newParamRate),
+        [`customParameterBilling.${newEmployeeId}.${newParamName}.invoiceHours`]: parseFloat(newParamHours),
+        [`customParameterBilling.${newEmployeeId}.${newParamName}.invoiceNotes`]: newParamNotes,
+        [`customParameterBilling.${newEmployeeId}.${newParamName}.invoiceApprovedBy`]: auth.currentUser?.uid || 'unknown',
+        [`customParameterBilling.${newEmployeeId}.${newParamName}.invoiceApprovedAt`]: new Date(),
+        updatedAt: new Date()
+      });
+
+      // Clear form
+      setNewParamName('');
+      setNewEmployeeId('');
+      setNewParamRate('');
+      setNewParamHours('');
+      setNewParamNotes('');
+
+      alert('Custom parameter added successfully!');
+    } catch (err) {
+      alert('Error adding custom parameter: ' + err.message);
+    }
+  };
+
+  return (
+    <div style={{
+      marginTop: '10px',
+      padding: '10px',
+      background: '#fff9e6',
+      border: '1px solid #ffc107',
+      borderRadius: '4px'
+    }}>
+      <h4 style={{ fontSize: '13px', fontWeight: '600', marginBottom: '12px', color: '#f57c00', marginTop: 0 }}>
+        ⭐ Custom Parameter Billing
+      </h4>
+
+      {/* Add New Custom Parameter Section */}
+      <div style={{
+        padding: '10px',
+        background: '#e3f2fd',
+        border: '1px solid #1a73e8',
+        borderRadius: '4px',
+        marginBottom: '12px'
+      }}>
+        <div style={{ fontSize: '12px', fontWeight: '600', marginBottom: '8px', color: '#1a73e8' }}>
+          Add Custom Parameter
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+          <div>
+            <label style={{ display: 'block', fontSize: '10px', color: '#5f6368', marginBottom: '2px' }}>
+              Parameter Name *
+            </label>
+            <input
+              type="text"
+              value={newParamName}
+              onChange={(e) => setNewParamName(e.target.value)}
+              placeholder="e.g., pilotCarDriver, specialEquipment"
+              style={{
+                width: '100%',
+                padding: '4px 6px',
+                border: '1px solid #dadce0',
+                borderRadius: '4px',
+                fontSize: '11px'
+              }}
+            />
+          </div>
+
+          <div>
+            <label style={{ display: 'block', fontSize: '10px', color: '#5f6368', marginBottom: '2px' }}>
+              Employee *
+            </label>
+            <select
+              value={newEmployeeId}
+              onChange={(e) => setNewEmployeeId(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '4px 6px',
+                border: '1px solid #dadce0',
+                borderRadius: '4px',
+                fontSize: '11px'
+              }}
+            >
+              <option value="">Select employee...</option>
+              {employees.map(emp => (
+                <option key={emp.id} value={emp.id}>
+                  {emp.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label style={{ display: 'block', fontSize: '10px', color: '#5f6368', marginBottom: '2px' }}>
+              Bill Rate ($/hr) *
+            </label>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              value={newParamRate}
+              onChange={(e) => setNewParamRate(e.target.value)}
+              placeholder="50.00"
+              style={{
+                width: '100%',
+                padding: '4px 6px',
+                border: '1px solid #dadce0',
+                borderRadius: '4px',
+                fontSize: '11px'
+              }}
+            />
+          </div>
+
+          <div>
+            <label style={{ display: 'block', fontSize: '10px', color: '#5f6368', marginBottom: '2px' }}>
+              Hours *
+            </label>
+            <input
+              type="number"
+              step="0.25"
+              min="0"
+              value={newParamHours}
+              onChange={(e) => setNewParamHours(e.target.value)}
+              placeholder="8.0"
+              style={{
+                width: '100%',
+                padding: '4px 6px',
+                border: '1px solid #dadce0',
+                borderRadius: '4px',
+                fontSize: '11px'
+              }}
+            />
+          </div>
+
+          <div style={{ gridColumn: '1 / -1' }}>
+            <label style={{ display: 'block', fontSize: '10px', color: '#5f6368', marginBottom: '2px' }}>
+              Invoice Notes
+            </label>
+            <textarea
+              value={newParamNotes}
+              onChange={(e) => setNewParamNotes(e.target.value)}
+              placeholder="Notes for invoice..."
+              rows="2"
+              style={{
+                width: '100%',
+                padding: '4px 6px',
+                border: '1px solid #dadce0',
+                borderRadius: '4px',
+                fontSize: '11px',
+                fontFamily: 'inherit'
+              }}
+            />
+          </div>
+        </div>
+
+        <button
+          onClick={handleAddCustomParam}
+          className="btn btn-primary"
+          style={{ fontSize: '11px', padding: '4px 10px', marginTop: '8px' }}
+        >
+          + Add Custom Parameter
+        </button>
+      </div>
+
+      {/* Existing Custom Parameters */}
+      {customParams.length > 0 && (
+        <>
+          <div style={{ fontSize: '12px', fontWeight: '600', marginBottom: '8px', color: '#202124' }}>
+            Existing Custom Parameters
+          </div>
+
+          {customParams.map((param, idx) => {
+            const data = param.data;
+            const billRate = data.invoiceRate !== undefined ? data.invoiceRate : 
+                           data.payrollRate !== undefined ? data.payrollRate : 
+                           data.timeEntryRate || 0;
+            const billHours = data.invoiceHours !== undefined ? data.invoiceHours : 
+                            data.payrollHours !== undefined ? data.payrollHours : 
+                            data.timeEntryHours || 0;
+            const isBilling = data.invoiceBill === true;
+            const billTotal = billRate * billHours;
+
+            return (
+              <div key={idx} style={{
+                padding: '10px',
+                background: 'white',
+                border: '1px solid #e0e0e0',
+                borderRadius: '4px',
+                marginBottom: '8px'
+              }}>
+                {/* Header */}
+                <div style={{ 
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginBottom: isBilling ? '10px' : 0
+                }}>
+                  <div>
+                    <strong style={{ fontSize: '11px' }}>
+                      {param.paramName} - {param.employeeName}
+                    </strong>
+                    <div style={{ fontSize: '10px', color: '#666', marginTop: '2px' }}>
+                      {data.timeEntryHours && `Time Entry: ${data.timeEntryHours}hrs @ $${data.timeEntryRate}/hr`}
+                      {data.payrollPay && ` • Payroll: ${data.payrollHours}hrs @ $${data.payrollRate}/hr`}
+                      {data.timeEntryNotes && ` - ${data.timeEntryNotes}`}
+                    </div>
+                  </div>
+                  
+                  {/* Bill Toggle */}
+                  <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={isBilling}
+                      onChange={(e) => handleBillingToggle(param.employeeId, param.paramName, e.target.checked)}
+                      style={{ marginRight: '6px', width: '16px', height: '16px', cursor: 'pointer' }}
+                    />
+                    <span style={{ fontSize: '11px', fontWeight: '600' }}>
+                      Bill Client
+                    </span>
+                  </label>
+                </div>
+
+                {/* Editable fields (only if billing) */}
+                {isBilling && (
+                  <div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '10px', color: '#5f6368', marginBottom: '2px' }}>
+                          Bill Rate ($/hr)
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={billRate}
+                          onChange={(e) => handleBillingChange(param.employeeId, param.paramName, 'invoiceRate', e.target.value)}
+                          style={{
+                            width: '100%',
+                            padding: '4px 6px',
+                            border: '1px solid #dadce0',
+                            borderRadius: '4px',
+                            fontSize: '11px'
+                          }}
+                        />
+                      </div>
+
+                      <div>
+                        <label style={{ display: 'block', fontSize: '10px', color: '#5f6368', marginBottom: '2px' }}>
+                          Hours to Bill
+                        </label>
+                        <input
+                          type="number"
+                          step="0.25"
+                          min="0"
+                          value={billHours}
+                          onChange={(e) => handleBillingChange(param.employeeId, param.paramName, 'invoiceHours', e.target.value)}
+                          style={{
+                            width: '100%',
+                            padding: '4px 6px',
+                            border: '1px solid #dadce0',
+                            borderRadius: '4px',
+                            fontSize: '11px'
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    <div style={{ marginBottom: '8px' }}>
+                      <label style={{ display: 'block', fontSize: '10px', color: '#5f6368', marginBottom: '2px' }}>
+                        Invoice Notes
+                      </label>
+                      <textarea
+                        value={data.invoiceNotes || ''}
+                        onChange={(e) => handleBillingChange(param.employeeId, param.paramName, 'invoiceNotes', e.target.value)}
+                        placeholder="Notes for invoice..."
+                        rows="2"
+                        style={{
+                          width: '100%',
+                          padding: '4px 6px',
+                          border: '1px solid #dadce0',
+                          borderRadius: '4px',
+                          fontSize: '11px',
+                          fontFamily: 'inherit'
+                        }}
+                      />
+                    </div>
+
+                    {/* Calculated Bill */}
+                    <div style={{ 
+                      textAlign: 'right',
+                      fontSize: '12px',
+                      fontWeight: '600',
+                      color: '#2e7d32'
+                    }}>
+                      Bill: ${billTotal.toFixed(2)}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </>
+      )}
     </div>
   );
 }

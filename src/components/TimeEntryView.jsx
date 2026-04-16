@@ -277,7 +277,27 @@ function TimeEntryView({ permissions }) {
 function JobDataEntry({ job, employees, canUpdate, isLast }) {
   const [timeData, setTimeData] = useState(job.actualHours || {});
   const [equipmentData, setEquipmentData] = useState(job.actualEquipment || {});
+  const [customParamEntries, setCustomParamEntries] = useState([]);
   const [saving, setSaving] = useState(false);
+
+  // Load existing custom parameter billing on mount
+  useEffect(() => {
+    if (job.customParameterBilling) {
+      const entries = [];
+      Object.entries(job.customParameterBilling).forEach(([empId, params]) => {
+        Object.entries(params).forEach(([paramName, data]) => {
+          entries.push({
+            employeeId: empId,
+            paramName: paramName,
+            hours: data.timeEntryHours || 0,
+            rate: data.timeEntryRate || 0,
+            notes: data.timeEntryNotes || ''
+          });
+        });
+      });
+      setCustomParamEntries(entries);
+    }
+  }, [job]);
 
   // Generate 15-minute increment time options (00:00 to 23:45)
   const generateTimeOptions = () => {
@@ -341,6 +361,52 @@ function JobDataEntry({ job, employees, canUpdate, isLast }) {
     }));
   };
 
+  // Custom parameter handlers
+  const addCustomParamEntry = () => {
+    setCustomParamEntries([...customParamEntries, {
+      employeeId: '',
+      paramName: '',
+      hours: 0,
+      rate: 0,
+      notes: ''
+    }]);
+  };
+
+  const removeCustomParamEntry = (index) => {
+    setCustomParamEntries(customParamEntries.filter((_, i) => i !== index));
+  };
+
+  const handleCustomParamChange = (index, field, value) => {
+    const updated = [...customParamEntries];
+    updated[index][field] = value;
+    setCustomParamEntries(updated);
+  };
+
+  const validateCustomParamEntries = () => {
+    for (const entry of customParamEntries) {
+      // If any field is filled, all required fields must be filled
+      if (entry.employeeId || entry.paramName || entry.hours > 0 || entry.rate > 0) {
+        if (!entry.employeeId) {
+          alert('Please select an employee for all custom parameter entries');
+          return false;
+        }
+        if (!entry.paramName) {
+          alert('Please select a parameter for all custom parameter entries');
+          return false;
+        }
+        if (entry.hours <= 0) {
+          alert('Please enter hours greater than 0 for all custom parameter entries');
+          return false;
+        }
+        if (entry.rate <= 0) {
+          alert('Please enter a rate greater than 0 for all custom parameter entries');
+          return false;
+        }
+      }
+    }
+    return true;
+  };
+
   const calculateHours = (flagger) => {
     const data = timeData[flagger] || {};
     if (!data.startTime || !data.endTime) return { total: 0, regular: 0, ot: 0 };
@@ -377,6 +443,11 @@ function JobDataEntry({ job, employees, canUpdate, isLast }) {
   const handleSave = async () => {
     if (!canUpdate) return;
 
+    // Validate custom parameter entries
+    if (!validateCustomParamEntries()) {
+      return;
+    }
+
     setSaving(true);
     try {
       // Calculate hours for each flagger
@@ -390,9 +461,28 @@ function JobDataEntry({ job, employees, canUpdate, isLast }) {
         }
       });
 
+      // Build custom parameter billing data
+      const customBilling = {};
+      customParamEntries.forEach(entry => {
+        if (entry.employeeId && entry.paramName && entry.hours > 0 && entry.rate > 0) {
+          if (!customBilling[entry.employeeId]) {
+            customBilling[entry.employeeId] = {};
+          }
+          
+          customBilling[entry.employeeId][entry.paramName] = {
+            timeEntryHours: parseFloat(entry.hours),
+            timeEntryRate: parseFloat(entry.rate),
+            timeEntryNotes: entry.notes,
+            enteredBy: auth.currentUser.uid,
+            enteredAt: new Date()
+          };
+        }
+      });
+
       await updateDoc(doc(db, 'jobs', job.id), {
         actualHours: updatedTimeData,
         actualEquipment: equipmentData,
+        customParameterBilling: customBilling,
         updatedAt: serverTimestamp(),
         updatedBy: auth.currentUser?.email || 'unknown'
       });
@@ -783,6 +873,203 @@ function JobDataEntry({ job, employees, canUpdate, isLast }) {
           </div>
         );
       })}
+
+      {/* Custom Parameter Billing Section - ALWAYS SHOW */}
+      <div style={{ 
+        marginTop: '12px',
+        padding: '12px',
+        background: '#fff9e6',
+        border: '1px solid #ffc107',
+        borderRadius: '4px'
+      }}>
+        <h3 style={{ fontSize: '13px', fontWeight: '600', marginBottom: '8px', color: '#f57c00' }}>
+          ⭐ Custom Parameter Billing
+        </h3>
+        <p style={{ fontSize: '11px', color: '#666', marginBottom: '12px', marginTop: 0 }}>
+          Track specialized work (pilot car, special equipment, etc.) with custom billing parameters.
+        </p>
+          
+          {/* Existing Custom Parameter Billing Summary */}
+          {job.customParameterBilling && Object.keys(job.customParameterBilling).length > 0 && (
+            <div style={{ marginBottom: '12px', padding: '10px', background: '#e3f2fd', borderRadius: '4px' }}>
+              <strong style={{ fontSize: '11px', display: 'block', marginBottom: '6px' }}>Existing Custom Parameter Billing:</strong>
+              {Object.entries(job.customParameterBilling).map(([empId, params]) => {
+                const emp = employees.find(e => e.id === empId);
+                return (
+                  <div key={empId} style={{ marginTop: '6px', fontSize: '10px' }}>
+                    <strong>{emp?.fullName || emp?.name || empId}:</strong>
+                    <ul style={{ marginLeft: '16px', marginTop: '2px', marginBottom: '2px' }}>
+                      {Object.entries(params).map(([paramName, data]) => (
+                        <li key={paramName}>
+                          {paramName}: {data.timeEntryHours}hrs @ ${data.timeEntryRate}/hr = 
+                          ${(data.timeEntryHours * data.timeEntryRate).toFixed(2)}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          
+          {customParamEntries.map((entry, index) => (
+            <div key={index} style={{
+              padding: '10px',
+              background: 'white',
+              border: '1px solid #e0e0e0',
+              borderRadius: '4px',
+              marginBottom: '8px'
+            }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                {/* Parameter Name - Text Input */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '10px', color: '#5f6368', marginBottom: '2px' }}>
+                    Parameter Name *
+                  </label>
+                  <input
+                    type="text"
+                    value={entry.paramName}
+                    onChange={(e) => handleCustomParamChange(index, 'paramName', e.target.value)}
+                    placeholder="e.g., pilotCarDriver, specialEquipment"
+                    style={{
+                      width: '100%',
+                      padding: '4px 6px',
+                      border: '1px solid #dadce0',
+                      borderRadius: '4px',
+                      fontSize: '11px'
+                    }}
+                  />
+                  {job.custom && Object.keys(job.custom).length > 0 && (
+                    <div style={{ fontSize: '9px', color: '#999', marginTop: '2px' }}>
+                      Existing: {Object.keys(job.custom).join(', ')}
+                    </div>
+                  )}
+                </div>
+
+                {/* Employee Selection */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '10px', color: '#5f6368', marginBottom: '2px' }}>
+                    Employee *
+                  </label>
+                  <select
+                    value={entry.employeeId}
+                    onChange={(e) => handleCustomParamChange(index, 'employeeId', e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '4px 6px',
+                      border: '1px solid #dadce0',
+                      borderRadius: '4px',
+                      fontSize: '11px'
+                    }}
+                  >
+                    <option value="">Select employee...</option>
+                    {employees.filter(e => e.isActive !== false).map(emp => (
+                      <option key={emp.id} value={emp.id}>
+                        {emp.fullName || emp.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Hours */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '10px', color: '#5f6368', marginBottom: '2px' }}>
+                    Hours *
+                  </label>
+                  <input
+                    type="number"
+                    step="0.25"
+                    min="0"
+                    value={entry.hours}
+                    onChange={(e) => handleCustomParamChange(index, 'hours', e.target.value)}
+                    placeholder="8.0"
+                    style={{
+                      width: '100%',
+                      padding: '4px 6px',
+                      border: '1px solid #dadce0',
+                      borderRadius: '4px',
+                      fontSize: '11px'
+                    }}
+                  />
+                </div>
+
+                {/* Rate */}
+                <div>
+                  <label style={{ display: 'block', fontSize: '10px', color: '#5f6368', marginBottom: '2px' }}>
+                    Rate ($/hr) *
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={entry.rate}
+                    onChange={(e) => handleCustomParamChange(index, 'rate', e.target.value)}
+                    placeholder="50.00"
+                    style={{
+                      width: '100%',
+                      padding: '4px 6px',
+                      border: '1px solid #dadce0',
+                      borderRadius: '4px',
+                      fontSize: '11px'
+                    }}
+                  />
+                </div>
+
+                {/* Notes */}
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <label style={{ display: 'block', fontSize: '10px', color: '#5f6368', marginBottom: '2px' }}>
+                    Notes
+                  </label>
+                  <textarea
+                    value={entry.notes}
+                    onChange={(e) => handleCustomParamChange(index, 'notes', e.target.value)}
+                    placeholder="Details about this custom parameter billing..."
+                    rows="2"
+                    style={{
+                      width: '100%',
+                      padding: '4px 6px',
+                      border: '1px solid #dadce0',
+                      borderRadius: '4px',
+                      fontSize: '11px',
+                      fontFamily: 'inherit'
+                    }}
+                  />
+                </div>
+
+                {/* Calculated Total */}
+                <div style={{ gridColumn: '1 / -1', textAlign: 'right', fontWeight: '600', fontSize: '11px' }}>
+                  Total: ${((entry.hours || 0) * (entry.rate || 0)).toFixed(2)}
+                </div>
+              </div>
+
+              {/* Remove Button */}
+              <button
+                onClick={() => removeCustomParamEntry(index)}
+                style={{
+                  marginTop: '6px',
+                  background: '#f44336',
+                  color: 'white',
+                  border: 'none',
+                  padding: '3px 8px',
+                  borderRadius: '4px',
+                  fontSize: '10px',
+                  cursor: 'pointer'
+                }}
+              >
+                Remove
+              </button>
+            </div>
+          ))}
+
+          {/* Add Entry Button */}
+          <button
+            onClick={addCustomParamEntry}
+            className="btn btn-secondary"
+            style={{ fontSize: '11px', padding: '4px 10px' }}
+          >
+            + Add Custom Parameter Entry
+          </button>
+        </div>
 
       {/* Save Button */}
       {canUpdate && (
